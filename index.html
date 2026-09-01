@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teacher Quiz Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <h1>Teacher Quiz Dashboard</h1>
+            <p id="statusText">Sign in to view your classrooms</p>
+        </div>
+        <div class="topbar-actions">
+            <button class="btn primary" id="loginBtn">Google Login</button>
+            <button class="btn" id="refreshBtn" hidden>Refresh</button>
+            <button class="btn" id="logoutBtn" hidden>Logout</button>
+        </div>
+    </header>
+
+    <main class="app-shell">
+        <section class="panel login-panel" id="loginView">
+            <h2>Teacher Login</h2>
+            <p>Use the Google account that created the classroom documents.</p>
+            <button class="btn primary wide-btn" id="loginHeroBtn">Continue with Google</button>
+        </section>
+
+        <aside class="panel classroom-panel" id="classroomPanel" hidden>
+            <div class="panel-head">
+                <div>
+                    <h2>Classrooms</h2>
+                    <p id="teacherLabel"></p>
+                </div>
+                <span class="count-chip" id="classroomCount">0</span>
+            </div>
+            <div class="field">
+                <span>Search</span>
+                <input id="classroomSearch" type="search" placeholder="Class name, code, section" />
+            </div>
+            <div id="classroomList" class="classroom-list"></div>
+        </aside>
+
+        <section class="dashboard" id="dashboardView" hidden>
+            <section class="panel selected-classroom">
+                <div class="panel-head">
+                    <div>
+                        <h2 id="selectedClassroomTitle">Select a classroom</h2>
+                        <p id="selectedClassroomMeta"></p>
+                    </div>
+                    <span class="status-chip" id="enabledChip">Status</span>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span>Submissions</span>
+                        <strong id="statSubmissions">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span>Students</span>
+                        <strong id="statStudents">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span>Average</span>
+                        <strong id="statAverage">-</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span>Manual Review</span>
+                        <strong id="statManual">0</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel submissions-panel">
+                <div class="panel-head">
+                    <div>
+                        <h2>Quiz Submissions</h2>
+                        <p id="submissionSummary">Choose a classroom to load submissions.</p>
+                    </div>
+                    <button class="btn" id="exportCsvBtn">Export CSV</button>
+                </div>
+                <div class="filters-grid">
+                    <label class="field">
+                        <span>Student</span>
+                        <input id="studentSearch" type="search" placeholder="Name or admission no" />
+                    </label>
+                    <label class="field">
+                        <span>Subject</span>
+                        <input id="subjectFilter" placeholder="Any subject" />
+                    </label>
+                    <label class="field">
+                        <span>Chapter</span>
+                        <input id="chapterFilter" placeholder="Any chapter" />
+                    </label>
+                    <label class="field">
+                        <span>Result</span>
+                        <select id="resultFilter">
+                            <option value="">Any</option>
+                            <option value="passed">50% and above</option>
+                            <option value="needs_review">Needs review</option>
+                            <option value="manual">Has short answers</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="submissionList" class="submission-list"></div>
+            </section>
+        </section>
+    </main>
+
+    <dialog id="detailDialog" class="modal">
+        <div class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2 id="detailTitle">Submission Details</h2>
+                    <p id="detailMeta"></p>
+                </div>
+                <button class="btn" id="closeDetailBtn">Close</button>
+            </div>
+            <div id="detailStats" class="stats-grid"></div>
+            <div id="answerDetails" class="answer-details"></div>
+        </div>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
