@@ -62,8 +62,10 @@ const db = getFirestore(app);
 let currentUser = null;
 let classrooms = [];
 let classSections = [];
+let sectionStudents = [];
 let questionBankLists = [];
 let activeClassroomId = null;
+let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'table';
 let toastTimer = null;
@@ -84,6 +86,10 @@ const els = {
     createClassroomBtn: $('createClassroomBtn'),
     classroomCount: $('classroomCount'),
     classroomList: $('classroomList'),
+    sectionCount: $('sectionCount'),
+    sectionSummary: $('sectionSummary'),
+    sectionList: $('sectionList'),
+    studentRoster: $('studentRoster'),
     selectedClassroomTitle: $('selectedClassroomTitle'),
     selectedClassroomMeta: $('selectedClassroomMeta'),
     enabledChip: $('enabledChip'),
@@ -143,9 +149,11 @@ onAuthStateChanged(auth, async (user) => {
     if (!user) {
         classrooms = [];
         classSections = [];
+        sectionStudents = [];
         questionBankLists = [];
         submissions = [];
         activeClassroomId = null;
+        activeSectionId = null;
         setStatus('Sign in to view your classrooms');
         render();
         promptGuidedTour();
@@ -297,9 +305,34 @@ async function loadClassSections() {
         classSections = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
             return sectionLabel(a).localeCompare(sectionLabel(b), undefined, { sensitivity: 'base' });
         });
+        if (activeSectionId && !classSections.some(section => section.id === activeSectionId)) {
+            activeSectionId = null;
+            sectionStudents = [];
+        }
     } catch (error) {
         classSections = [];
+        sectionStudents = [];
+        activeSectionId = null;
         toast('Unable to load sections');
+    }
+}
+
+async function loadStudentsForSection(sectionId) {
+    const section = classSections.find(item => item.id === sectionId);
+    if (!section) return;
+    activeSectionId = sectionId;
+    sectionStudents = [];
+    renderSections();
+    try {
+        const snap = await getDocs(collection(db, COLLECTIONS.classSections, sectionId, 'students'));
+        sectionStudents = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+            return String(a.admissionNo || a.id).localeCompare(String(b.admissionNo || b.id), undefined, { numeric: true });
+        });
+        renderSections();
+    } catch (error) {
+        sectionStudents = [];
+        renderSections();
+        toast('Unable to load students');
     }
 }
 
@@ -365,6 +398,7 @@ async function loadSubmissionsForClassroom(classroomId) {
 
 function render() {
     renderClassrooms();
+    renderSections();
     renderSelectedClassroom();
     renderSubmissions();
 }
@@ -395,6 +429,46 @@ function renderClassrooms() {
     });
     document.querySelectorAll('[data-edit-classroom]').forEach(btn => {
         btn.addEventListener('click', () => openClassroomEditor(btn.dataset.editClassroom));
+    });
+}
+
+function renderSections() {
+    els.sectionCount.textContent = String(classSections.length);
+    els.sectionList.innerHTML = classSections.length ? classSections.map(section => `
+        <button class="section-card ${section.id === activeSectionId ? 'active' : ''}" type="button" data-section="${section.id}">
+            <strong>${esc(sectionLabel(section))}</strong>
+            <span>${esc(section.id)}</span>
+        </button>
+    `).join('') : '<div class="empty-card">No sections found.</div>';
+    els.sectionSummary.textContent = activeSectionId
+        ? `${sectionStudents.length} student${sectionStudents.length === 1 ? '' : 's'} in ${sectionLabel(classSections.find(section => section.id === activeSectionId) || {})}`
+        : 'Select a section to view students.';
+    els.studentRoster.innerHTML = activeSectionId
+        ? sectionStudents.length ? `
+            <div class="student-table-wrap">
+                <table class="student-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Admission</th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Phone</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sectionStudents.map(student => `
+                            <tr>
+                                <td>${esc(student.admissionNo || student.id)}</td>
+                                <td>${esc(student.name || '')}</td>
+                                <td>${esc(student.phone || '')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        ` : '<div class="empty-card">No students found in this section.</div>'
+        : '';
+    document.querySelectorAll('[data-section]').forEach(btn => {
+        btn.addEventListener('click', () => loadStudentsForSection(btn.dataset.section));
     });
 }
 

@@ -38,7 +38,8 @@ service cloud.firestore {
       allow create, update, delete: if false;
 
       match /students/{studentId} {
-        allow read, write: if false;
+        allow read: if signedIn();
+        allow write: if false;
       }
     }
 

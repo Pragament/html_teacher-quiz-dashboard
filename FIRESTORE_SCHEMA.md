@@ -81,6 +81,22 @@ The selected option is saved into classrooms as:
 }
 ```
 
+Section rosters are read from:
+
+```txt
+/classSections/{sectionId}/students/{studentDocId}
+```
+
+Student document shape:
+
+```js
+{
+  admissionNo: '102',
+  name: 'Parunandi Sai Adithya',
+  phone: '8328303045'
+}
+```
+
 ### `qb_lists_v1`
 
 Path:
@@ -184,6 +200,12 @@ Section dropdown:
 
 ```txt
 classSections
+```
+
+Section roster:
+
+```txt
+classSections/{sectionId}/students
 ```
 
 Submission loading for a selected classroom:
