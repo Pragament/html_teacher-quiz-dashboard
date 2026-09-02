@@ -7,6 +7,7 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 - `index.html` - login, classroom list, submission dashboard, and answer-detail modal.
 - `styles.css` - responsive phone, tablet, and desktop layout.
 - `app.js` - Firebase Auth, classroom and question-list queries, classroom creation/updates, submission queries, detail rendering, and CSV export.
+- `school-admin/` - independent admin app for class section CRUD and CSV import/export.
 - `FIRESTORE_SCHEMA.md` - schema and query documentation.
 - `firestore.rules` - starter security rules notes for teacher dashboard access.
 
