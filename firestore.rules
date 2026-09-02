@@ -12,9 +12,33 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/classrooms/$(classroomId)).data.creatorId == request.auth.uid;
     }
 
+    function ownsQuestionBankList(listId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/qb_lists_v1/$(listId))
+        && get(/databases/$(database)/documents/qb_lists_v1/$(listId)).data.ownerUid == request.auth.uid;
+    }
+
+    function hasValidQuestionBankList() {
+      return !('questionBankListId' in request.resource.data)
+        || ownsQuestionBankList(request.resource.data.questionBankListId);
+    }
+
     match /classrooms/{classroomId} {
       allow read: if signedIn() && resource.data.creatorId == request.auth.uid;
-      allow write: if false;
+      allow update: if signedIn()
+        && resource.data.creatorId == request.auth.uid
+        && request.resource.data.creatorId == resource.data.creatorId
+        && hasValidQuestionBankList();
+      allow create, delete: if false;
+    }
+
+    match /qb_lists_v1/{listId} {
+      allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /qb_quiz_submissions_v1/{submissionId} {

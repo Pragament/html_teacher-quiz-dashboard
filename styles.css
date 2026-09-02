@@ -77,7 +77,8 @@ button {
 .submission-head,
 .submission-meta,
 .answer-head,
-.answer-footer {
+.answer-footer,
+.form-actions {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -203,7 +204,9 @@ button {
     width: 100%;
     text-align: left;
     display: grid;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: start;
 }
 
 .classroom-card.active {
@@ -214,6 +217,28 @@ button {
 .classroom-card strong,
 .submission-card strong {
     font-size: 14px;
+}
+
+.classroom-select {
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    text-align: left;
+    display: grid;
+    gap: 6px;
+}
+
+.classroom-edit-btn {
+    min-height: 30px;
+    padding: 0 10px;
+}
+
+.question-list-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .count-chip,
@@ -338,6 +363,10 @@ button {
     background: rgba(7, 18, 31, 0.52);
 }
 
+.classroom-modal {
+    width: min(620px, calc(100vw - 24px));
+}
+
 .modal-card {
     display: grid;
     gap: 14px;
@@ -347,6 +376,31 @@ button {
     background: var(--panel);
     box-shadow: var(--shadow);
     padding: 16px;
+}
+
+.classroom-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.toggle-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #41546b;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.toggle-field input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+}
+
+.form-actions {
+    justify-content: flex-end;
 }
 
 .modal-head {
@@ -392,6 +446,10 @@ button {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .classroom-card {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .stats-grid,
     .filters-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -415,9 +473,15 @@ button {
     }
 
     .classroom-list,
+    .classroom-edit-grid,
     .stats-grid,
     .filters-grid {
         grid-template-columns: 1fr;
+    }
+
+    .form-actions .btn,
+    .classroom-edit-btn {
+        width: 100%;
     }
 
     .panel,

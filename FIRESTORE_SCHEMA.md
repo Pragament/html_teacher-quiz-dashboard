@@ -1,6 +1,6 @@
 # Firestore Schema
 
-The teacher dashboard reads existing classroom data and quiz submission data. It does not write classroom or submission documents.
+The teacher dashboard reads classroom and quiz submission data. It can update classrooms owned by the signed-in teacher.
 
 ## Firebase Auth
 
@@ -31,7 +31,9 @@ Document shape:
   createdDate: 1788177950135,
   creatorId: 'SPwA523UClVxTpX5m8XPMu5Imiy1',
   sectionId: 'QQAP9O4UyvlaYhqz7jdE',
-  sectionName: 'DSS grade 8'
+  sectionName: 'DSS grade 8',
+  questionBankListId: 'qb_lists_v1 document id',
+  updatedAt: Timestamp
 }
 ```
 
@@ -42,6 +44,35 @@ Important fields:
 - `classEnabled` - shown as enabled/disabled.
 - `sectionId` - used as a submission lookup fallback for all students in the classroom section.
 - `sectionName` - shown in the dashboard.
+- `questionBankListId` - optional reference to a private question list selected by the teacher.
+
+### `qb_lists_v1`
+
+Path:
+
+```txt
+/qb_lists_v1/{listId}
+```
+
+Document shape:
+
+```js
+{
+  name: 'Favorites',
+  ownerUid: 'firebase-auth-uid',
+  questionIds: [
+    'qb_questions_v1 document id'
+  ],
+  createdAt: Timestamp,
+  updatedAt: Timestamp
+}
+```
+
+Important fields:
+
+- `ownerUid` - must match the signed-in teacher UID for the list to appear in the classroom editor.
+- `name` - shown in the classroom question-list dropdown.
+- `questionIds` - stores question document IDs, not embedded question snapshots.
 
 ### `qb_quiz_submissions_v1`
 
@@ -108,6 +139,12 @@ Classroom list:
 classrooms where creatorId == currentUser.uid
 ```
 
+Question list dropdown:
+
+```txt
+qb_lists_v1 where ownerUid == currentUser.uid
+```
+
 Submission loading for a selected classroom:
 
 ```txt
@@ -123,6 +160,9 @@ The app de-duplicates submissions by document ID and sorts by `submittedAtMillis
 ```txt
 classrooms:
   creatorId ASC
+
+qb_lists_v1:
+  ownerUid ASC
 
 qb_quiz_submissions_v1:
   classroomId ASC

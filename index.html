@@ -123,6 +123,44 @@
         </div>
     </dialog>
 
+    <dialog id="classroomDialog" class="modal classroom-modal">
+        <form id="editClassroomForm" class="modal-card">
+            <input id="editClassroomId" type="hidden" />
+            <div class="modal-head">
+                <div>
+                    <h2 id="editClassroomTitle">Edit Classroom</h2>
+                    <p>Changes are saved to the classroom document.</p>
+                </div>
+                <button class="btn" id="cancelClassroomEditBtn" type="button">Cancel</button>
+            </div>
+            <div class="classroom-edit-grid">
+                <label class="field">
+                    <span>Name</span>
+                    <input id="editClassroomName" autocomplete="off" placeholder="Classroom name" />
+                </label>
+                <label class="field">
+                    <span>Code</span>
+                    <input id="editClassCode" autocomplete="off" placeholder="Class code" />
+                </label>
+                <label class="field">
+                    <span>Section</span>
+                    <input id="editSectionName" autocomplete="off" placeholder="Section name" />
+                </label>
+                <label class="field">
+                    <span>Question List</span>
+                    <select id="editQuestionBankList"></select>
+                </label>
+            </div>
+            <label class="toggle-field">
+                <input id="editClassEnabled" type="checkbox" />
+                <span>Enabled</span>
+            </label>
+            <div class="form-actions">
+                <button class="btn primary" type="submit">Save Classroom</button>
+            </div>
+        </form>
+    </dialog>
+
     <div id="toast" class="toast"></div>
     <script type="module" src="app.js"></script>
 </body>

@@ -8,9 +8,13 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
     collection,
+    deleteField,
+    doc,
     getDocs,
     getFirestore,
     query,
+    serverTimestamp,
+    updateDoc,
     where
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -26,6 +30,7 @@ const firebaseConfig = {
 
 const COLLECTIONS = {
     classrooms: 'classrooms',
+    questionBankLists: 'qb_lists_v1',
     submissions: 'qb_quiz_submissions_v1'
 };
 
@@ -35,6 +40,7 @@ const db = getFirestore(app);
 
 let currentUser = null;
 let classrooms = [];
+let questionBankLists = [];
 let activeClassroomId = null;
 let submissions = [];
 let toastTimer = null;
@@ -62,6 +68,15 @@ const els = {
     detailMeta: $('detailMeta'),
     detailStats: $('detailStats'),
     answerDetails: $('answerDetails'),
+    classroomDialog: $('classroomDialog'),
+    editClassroomTitle: $('editClassroomTitle'),
+    editClassroomForm: $('editClassroomForm'),
+    editClassroomId: $('editClassroomId'),
+    editClassroomName: $('editClassroomName'),
+    editClassCode: $('editClassCode'),
+    editSectionName: $('editSectionName'),
+    editClassEnabled: $('editClassEnabled'),
+    editQuestionBankList: $('editQuestionBankList'),
     toast: $('toast')
 };
 
@@ -84,6 +99,7 @@ onAuthStateChanged(auth, async (user) => {
     els.dashboardView.hidden = !user;
     if (!user) {
         classrooms = [];
+        questionBankLists = [];
         submissions = [];
         activeClassroomId = null;
         setStatus('Sign in to view your classrooms');
@@ -91,6 +107,7 @@ onAuthStateChanged(auth, async (user) => {
         return;
     }
     els.teacherLabel.textContent = user.displayName || user.email || user.uid;
+    await loadQuestionBankLists();
     await loadClassrooms();
 });
 
@@ -100,6 +117,8 @@ function bindEvents() {
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.refreshBtn.addEventListener('click', refreshActive);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
+    $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
+    els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
     $('exportCsvBtn').addEventListener('click', exportSubmissionsCsv);
     filterIds.forEach(id => $(id).addEventListener('input', render));
     filterIds.forEach(id => $(id).addEventListener('change', render));
@@ -107,6 +126,19 @@ function bindEvents() {
 
 async function login() {
     await signInWithPopup(auth, new GoogleAuthProvider());
+}
+
+async function loadQuestionBankLists() {
+    if (!currentUser) return;
+    try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.questionBankLists), where('ownerUid', '==', currentUser.uid)));
+        questionBankLists = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+            return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+        });
+    } catch (error) {
+        questionBankLists = [];
+        toast('Unable to load question lists');
+    }
 }
 
 async function loadClassrooms() {
@@ -133,6 +165,7 @@ async function loadClassrooms() {
 
 async function refreshActive() {
     if (!currentUser) return;
+    await loadQuestionBankLists();
     await loadClassrooms();
 }
 
@@ -181,18 +214,74 @@ function renderClassrooms() {
     });
     els.classroomCount.textContent = String(visible.length);
     els.classroomList.innerHTML = visible.length ? visible.map(c => `
-        <button class="classroom-card ${c.id === activeClassroomId ? 'active' : ''}" data-classroom="${c.id}">
-            <strong>${esc(c.className || c.classCode || c.id)}</strong>
-            <span>${esc(c.sectionName || c.sectionId || 'No section')}</span>
-            <span class="submission-meta">
-                <span>Code ${esc(c.classCode || c.id)}</span>
-                <span>${c.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
-            </span>
-        </button>
+        <article class="classroom-card ${c.id === activeClassroomId ? 'active' : ''}">
+            <button class="classroom-select" data-classroom="${c.id}">
+                <strong>${esc(c.className || c.classCode || c.id)}</strong>
+                <span>${esc(c.sectionName || c.sectionId || 'No section')}</span>
+                <span class="submission-meta">
+                    <span>Code ${esc(c.classCode || c.id)}</span>
+                    <span>${c.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
+                </span>
+                <span class="question-list-label">${esc(questionListName(c.questionBankListId))}</span>
+            </button>
+            <button class="btn classroom-edit-btn" type="button" data-edit-classroom="${c.id}">Edit</button>
+        </article>
     `).join('') : '<div class="empty-card">No matching classrooms.</div>';
     document.querySelectorAll('[data-classroom]').forEach(btn => {
         btn.addEventListener('click', () => loadSubmissionsForClassroom(btn.dataset.classroom));
     });
+    document.querySelectorAll('[data-edit-classroom]').forEach(btn => {
+        btn.addEventListener('click', () => openClassroomEditor(btn.dataset.editClassroom));
+    });
+}
+
+function openClassroomEditor(classroomId) {
+    const classroom = classrooms.find(c => c.id === classroomId);
+    if (!classroom) return;
+    els.editClassroomTitle.textContent = `Edit ${classroom.className || classroom.classCode || classroom.id}`;
+    els.editClassroomId.value = classroom.id;
+    els.editClassroomName.value = classroom.className || '';
+    els.editClassCode.value = classroom.classCode || '';
+    els.editSectionName.value = classroom.sectionName || '';
+    els.editClassEnabled.checked = classroom.classEnabled === true;
+    els.editQuestionBankList.innerHTML = `
+        <option value="">No question list</option>
+        ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
+    `;
+    els.editQuestionBankList.value = classroom.questionBankListId || '';
+    els.classroomDialog.showModal();
+}
+
+async function saveClassroomEdit(event) {
+    event.preventDefault();
+    if (!currentUser) return;
+    const classroomId = els.editClassroomId.value;
+    const classroom = classrooms.find(c => c.id === classroomId);
+    if (!classroom) return;
+    const questionBankListId = els.editQuestionBankList.value;
+    const selectedList = questionBankLists.find(list => list.id === questionBankListId);
+    const updates = {
+        className: els.editClassroomName.value.trim(),
+        classCode: els.editClassCode.value.trim(),
+        sectionName: els.editSectionName.value.trim(),
+        classEnabled: els.editClassEnabled.checked,
+        updatedAt: serverTimestamp()
+    };
+    if (selectedList) updates.questionBankListId = selectedList.id;
+    else updates.questionBankListId = deleteField();
+
+    try {
+        await updateDoc(doc(db, COLLECTIONS.classrooms, classroom.id), updates);
+        Object.assign(classroom, updates, {
+            questionBankListId: selectedList?.id
+        });
+        if (!selectedList) delete classroom.questionBankListId;
+        els.classroomDialog.close();
+        render();
+        toast('Classroom updated');
+    } catch (error) {
+        toast(error.message || 'Unable to update classroom');
+    }
 }
 
 function renderSelectedClassroom() {
@@ -213,7 +302,7 @@ function renderSelectedClassroom() {
         : '-';
     const manual = submissions.reduce((sum, s) => sum + manualCount(s), 0);
     els.selectedClassroomTitle.textContent = classroom.className || classroom.classCode || classroom.id;
-    els.selectedClassroomMeta.textContent = `Code ${classroom.classCode || classroom.id} · ${classroom.sectionName || classroom.sectionId || 'No section'} · ${filtered.length} filtered`;
+    els.selectedClassroomMeta.textContent = `Code ${classroom.classCode || classroom.id} · ${classroom.sectionName || classroom.sectionId || 'No section'} · ${questionListName(classroom.questionBankListId)} · ${filtered.length} filtered`;
     els.enabledChip.textContent = classroom.classEnabled === true ? 'Enabled' : 'Disabled';
     els.enabledChip.className = `status-chip ${classroom.classEnabled === true ? 'enabled' : 'disabled'}`;
     setStats(submissions.length, studentCount, average, manual);
@@ -375,6 +464,12 @@ function manualCount(submission) {
 function formatDate(value) {
     if (!value) return '';
     return new Date(value).toLocaleString();
+}
+
+function questionListName(questionBankListId) {
+    if (!questionBankListId) return 'No question list';
+    const list = questionBankLists.find(item => item.id === questionBankListId);
+    return list?.name || questionBankListId;
 }
 
 function sanitizeRich(value) {
