@@ -30,6 +30,7 @@ const firebaseConfig = {
 };
 
 const COLLECTIONS = {
+    classSections: 'classSections',
     classrooms: 'classrooms',
     questionBankLists: 'qb_lists_v1',
     submissions: 'qb_quiz_submissions_v1'
@@ -60,6 +61,7 @@ const db = getFirestore(app);
 
 let currentUser = null;
 let classrooms = [];
+let classSections = [];
 let questionBankLists = [];
 let activeClassroomId = null;
 let submissions = [];
@@ -108,7 +110,7 @@ const els = {
     editClassroomId: $('editClassroomId'),
     editClassroomName: $('editClassroomName'),
     editClassCode: $('editClassCode'),
-    editSectionName: $('editSectionName'),
+    editSectionId: $('editSectionId'),
     editClassEnabled: $('editClassEnabled'),
     editQuestionBankList: $('editQuestionBankList'),
     saveClassroomBtn: $('saveClassroomBtn'),
@@ -140,6 +142,7 @@ onAuthStateChanged(auth, async (user) => {
     els.dashboardView.hidden = !user;
     if (!user) {
         classrooms = [];
+        classSections = [];
         questionBankLists = [];
         submissions = [];
         activeClassroomId = null;
@@ -149,6 +152,7 @@ onAuthStateChanged(auth, async (user) => {
         return;
     }
     els.teacherLabel.textContent = user.displayName || user.email || user.uid;
+    await loadClassSections();
     await loadQuestionBankLists();
     await loadClassrooms();
     promptGuidedTour();
@@ -286,6 +290,19 @@ async function loadQuestionBankLists() {
     }
 }
 
+async function loadClassSections() {
+    if (!currentUser) return;
+    try {
+        const snap = await getDocs(collection(db, COLLECTIONS.classSections));
+        classSections = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+            return sectionLabel(a).localeCompare(sectionLabel(b), undefined, { sensitivity: 'base' });
+        });
+    } catch (error) {
+        classSections = [];
+        toast('Unable to load sections');
+    }
+}
+
 async function loadClassrooms() {
     if (!currentUser) return;
     setStatus('Loading classrooms...');
@@ -310,6 +327,7 @@ async function loadClassrooms() {
 
 async function refreshActive() {
     if (!currentUser) return;
+    await loadClassSections();
     await loadQuestionBankLists();
     await loadClassrooms();
 }
@@ -386,7 +404,7 @@ function openClassroomCreator(options = {}) {
     els.editClassroomId.value = '';
     els.editClassroomName.value = '';
     els.editClassCode.value = generateClassCode();
-    els.editSectionName.value = '';
+    renderSectionOptions();
     els.editClassEnabled.checked = true;
     els.editQuestionBankList.innerHTML = `
         <option value="">No question list</option>
@@ -402,6 +420,16 @@ function ensureClassroomCreatorOpen() {
     if (!els.classroomDialog.open) openClassroomCreator({ modal: false });
 }
 
+function renderSectionOptions(selectedSectionId = '', selectedSectionName = '') {
+    const hasExistingSection = selectedSectionId && !classSections.some(section => section.id === selectedSectionId);
+    els.editSectionId.innerHTML = `
+        <option value="">No section</option>
+        ${hasExistingSection ? `<option value="${esc(selectedSectionId)}">${esc(selectedSectionName || selectedSectionId)}</option>` : ''}
+        ${classSections.map(section => `<option value="${esc(section.id)}">${esc(sectionLabel(section))}</option>`).join('')}
+    `;
+    els.editSectionId.value = selectedSectionId || '';
+}
+
 function openClassroomEditor(classroomId) {
     const classroom = classrooms.find(c => c.id === classroomId);
     if (!classroom) return;
@@ -409,7 +437,7 @@ function openClassroomEditor(classroomId) {
     els.editClassroomId.value = classroom.id;
     els.editClassroomName.value = classroom.className || '';
     els.editClassCode.value = classroom.classCode || '';
-    els.editSectionName.value = classroom.sectionName || '';
+    renderSectionOptions(classroom.sectionId, classroom.sectionName);
     els.editClassEnabled.checked = classroom.classEnabled === true;
     els.editQuestionBankList.innerHTML = `
         <option value="">No question list</option>
@@ -427,29 +455,41 @@ async function saveClassroomEdit(event) {
     const classroom = classrooms.find(c => c.id === classroomId);
     const questionBankListId = els.editQuestionBankList.value;
     const selectedList = questionBankLists.find(list => list.id === questionBankListId);
+    const selectedSection = classSections.find(section => section.id === els.editSectionId.value);
     const className = els.editClassroomName.value.trim();
     const classCode = els.editClassCode.value.trim() || generateClassCode();
-    const sectionName = els.editSectionName.value.trim();
     const updates = {
         className,
         classCode,
-        sectionName,
         classEnabled: els.editClassEnabled.checked,
         updatedAt: serverTimestamp()
     };
+    if (selectedSection) {
+        updates.sectionId = selectedSection.id;
+        updates.sectionName = sectionLabel(selectedSection);
+    } else {
+        updates.sectionId = deleteField();
+        updates.sectionName = deleteField();
+    }
     if (selectedList) updates.questionBankListId = selectedList.id;
     else updates.questionBankListId = deleteField();
 
     if (!classroom) {
-        await createClassroom(updates, selectedList);
+        await createClassroom(updates, selectedList, selectedSection);
         return;
     }
 
     try {
         await updateDoc(doc(db, COLLECTIONS.classrooms, classroom.id), updates);
         Object.assign(classroom, updates, {
+            sectionId: selectedSection?.id,
+            sectionName: selectedSection ? sectionLabel(selectedSection) : undefined,
             questionBankListId: selectedList?.id
         });
+        if (!selectedSection) {
+            delete classroom.sectionId;
+            delete classroom.sectionName;
+        }
         if (!selectedList) delete classroom.questionBankListId;
         els.classroomDialog.close();
         render();
@@ -459,7 +499,7 @@ async function saveClassroomEdit(event) {
     }
 }
 
-async function createClassroom(formValues, selectedList) {
+async function createClassroom(formValues, selectedList, selectedSection) {
     const createdDate = Date.now();
     const classroomData = {
         ...formValues,
@@ -468,6 +508,10 @@ async function createClassroom(formValues, selectedList) {
         createdDate,
         createdAt: serverTimestamp()
     };
+    if (!selectedSection) {
+        delete classroomData.sectionId;
+        delete classroomData.sectionName;
+    }
     if (!selectedList) delete classroomData.questionBankListId;
 
     try {
@@ -815,6 +859,10 @@ function questionListName(questionBankListId) {
     if (!questionBankListId) return 'No question list';
     const list = questionBankLists.find(item => item.id === questionBankListId);
     return list?.name || questionBankListId;
+}
+
+function sectionLabel(section) {
+    return section.sectionName || section.name || section.className || section.title || section.id;
 }
 
 function generateClassCode() {

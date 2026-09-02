@@ -47,6 +47,40 @@ Important fields:
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
 
+### `classSections`
+
+Path:
+
+```txt
+/classSections/{sectionId}
+```
+
+The classroom editor loads section documents for the create/edit dropdown:
+
+```txt
+classSections
+```
+
+Supported display fields:
+
+```js
+{
+  sectionName: 'DSS grade 8',
+  name: 'DSS grade 8',
+  className: 'DSS grade 8',
+  title: 'DSS grade 8'
+}
+```
+
+The selected option is saved into classrooms as:
+
+```js
+{
+  sectionId: 'classSections document id',
+  sectionName: 'DSS grade 8'
+}
+```
+
 ### `qb_lists_v1`
 
 Path:
@@ -144,6 +178,12 @@ Question list dropdown:
 
 ```txt
 qb_lists_v1 where ownerUid == currentUser.uid
+```
+
+Section dropdown:
+
+```txt
+classSections
 ```
 
 Submission loading for a selected classroom:

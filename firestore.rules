@@ -18,20 +18,41 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/qb_lists_v1/$(listId)).data.ownerUid == request.auth.uid;
     }
 
+    function sectionExists(sectionId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/classSections/$(sectionId));
+    }
+
     function hasValidQuestionBankList() {
       return !('questionBankListId' in request.resource.data)
         || ownsQuestionBankList(request.resource.data.questionBankListId);
+    }
+
+    function hasValidSection() {
+      return !('sectionId' in request.resource.data)
+        || sectionExists(request.resource.data.sectionId);
+    }
+
+    match /classSections/{sectionId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+
+      match /students/{studentId} {
+        allow read, write: if false;
+      }
     }
 
     match /classrooms/{classroomId} {
       allow read: if signedIn() && resource.data.creatorId == request.auth.uid;
       allow create: if signedIn()
         && request.resource.data.creatorId == request.auth.uid
-        && hasValidQuestionBankList();
+        && hasValidQuestionBankList()
+        && hasValidSection();
       allow update: if signedIn()
         && resource.data.creatorId == request.auth.uid
         && request.resource.data.creatorId == resource.data.creatorId
-        && hasValidQuestionBankList();
+        && hasValidQuestionBankList()
+        && hasValidSection();
       allow delete: if false;
     }
 
