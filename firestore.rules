@@ -25,11 +25,14 @@ service cloud.firestore {
 
     match /classrooms/{classroomId} {
       allow read: if signedIn() && resource.data.creatorId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.creatorId == request.auth.uid
+        && hasValidQuestionBankList();
       allow update: if signedIn()
         && resource.data.creatorId == request.auth.uid
         && request.resource.data.creatorId == resource.data.creatorId
         && hasValidQuestionBankList();
-      allow create, delete: if false;
+      allow delete: if false;
     }
 
     match /qb_lists_v1/{listId} {

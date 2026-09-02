@@ -77,6 +77,7 @@ button {
 
 .topbar-actions,
 .panel-head,
+.panel-head-actions,
 .filters-grid,
 .submission-head,
 .submission-meta,
@@ -91,9 +92,14 @@ button {
 
 .topbar-actions,
 .panel-head,
+.panel-head-actions,
 .submission-head,
 .answer-head {
     justify-content: space-between;
+}
+
+.panel-head-actions {
+    justify-content: flex-end;
 }
 
 .btn {

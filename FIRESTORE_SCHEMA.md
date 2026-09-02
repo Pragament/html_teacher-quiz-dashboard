@@ -1,6 +1,6 @@
 # Firestore Schema
 
-The teacher dashboard reads classroom and quiz submission data. It can update classrooms owned by the signed-in teacher.
+The teacher dashboard reads classroom and quiz submission data. It can create and update classrooms owned by the signed-in teacher.
 
 ## Firebase Auth
 
@@ -28,6 +28,7 @@ Document shape:
   classEnabled: true,
   className: 'DSS grade 8 aug 31 quiz',
   createdBy: '',
+  createdAt: Timestamp,
   createdDate: 1788177950135,
   creatorId: 'SPwA523UClVxTpX5m8XPMu5Imiy1',
   sectionId: 'QQAP9O4UyvlaYhqz7jdE',

@@ -7,6 +7,7 @@ import {
     signOut
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
+    addDoc,
     collection,
     deleteField,
     doc,
@@ -78,6 +79,7 @@ const els = {
     editSectionName: $('editSectionName'),
     editClassEnabled: $('editClassEnabled'),
     editQuestionBankList: $('editQuestionBankList'),
+    saveClassroomBtn: $('saveClassroomBtn'),
     toast: $('toast')
 };
 
@@ -118,6 +120,7 @@ function bindEvents() {
     els.loginHeroBtn.addEventListener('click', login);
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.refreshBtn.addEventListener('click', refreshActive);
+    $('createClassroomBtn').addEventListener('click', openClassroomCreator);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
     els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
@@ -237,6 +240,22 @@ function renderClassrooms() {
     });
 }
 
+function openClassroomCreator() {
+    els.editClassroomTitle.textContent = 'Create Classroom';
+    els.editClassroomId.value = '';
+    els.editClassroomName.value = '';
+    els.editClassCode.value = generateClassCode();
+    els.editSectionName.value = '';
+    els.editClassEnabled.checked = true;
+    els.editQuestionBankList.innerHTML = `
+        <option value="">No question list</option>
+        ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
+    `;
+    els.editQuestionBankList.value = '';
+    els.saveClassroomBtn.textContent = 'Create Classroom';
+    els.classroomDialog.showModal();
+}
+
 function openClassroomEditor(classroomId) {
     const classroom = classrooms.find(c => c.id === classroomId);
     if (!classroom) return;
@@ -251,6 +270,7 @@ function openClassroomEditor(classroomId) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = classroom.questionBankListId || '';
+    els.saveClassroomBtn.textContent = 'Save Classroom';
     els.classroomDialog.showModal();
 }
 
@@ -259,18 +279,25 @@ async function saveClassroomEdit(event) {
     if (!currentUser) return;
     const classroomId = els.editClassroomId.value;
     const classroom = classrooms.find(c => c.id === classroomId);
-    if (!classroom) return;
     const questionBankListId = els.editQuestionBankList.value;
     const selectedList = questionBankLists.find(list => list.id === questionBankListId);
+    const className = els.editClassroomName.value.trim();
+    const classCode = els.editClassCode.value.trim() || generateClassCode();
+    const sectionName = els.editSectionName.value.trim();
     const updates = {
-        className: els.editClassroomName.value.trim(),
-        classCode: els.editClassCode.value.trim(),
-        sectionName: els.editSectionName.value.trim(),
+        className,
+        classCode,
+        sectionName,
         classEnabled: els.editClassEnabled.checked,
         updatedAt: serverTimestamp()
     };
     if (selectedList) updates.questionBankListId = selectedList.id;
     else updates.questionBankListId = deleteField();
+
+    if (!classroom) {
+        await createClassroom(updates, selectedList);
+        return;
+    }
 
     try {
         await updateDoc(doc(db, COLLECTIONS.classrooms, classroom.id), updates);
@@ -283,6 +310,37 @@ async function saveClassroomEdit(event) {
         toast('Classroom updated');
     } catch (error) {
         toast(error.message || 'Unable to update classroom');
+    }
+}
+
+async function createClassroom(formValues, selectedList) {
+    const createdDate = Date.now();
+    const classroomData = {
+        ...formValues,
+        creatorId: currentUser.uid,
+        createdBy: currentUser.displayName || currentUser.email || '',
+        createdDate,
+        createdAt: serverTimestamp()
+    };
+    if (!selectedList) delete classroomData.questionBankListId;
+
+    try {
+        const newRef = await addDoc(collection(db, COLLECTIONS.classrooms), classroomData);
+        const newClassroom = {
+            id: newRef.id,
+            ...classroomData,
+            questionBankListId: selectedList?.id
+        };
+        if (!selectedList) delete newClassroom.questionBankListId;
+        classrooms = [newClassroom, ...classrooms].sort((a, b) => (b.createdDate || 0) - (a.createdDate || 0));
+        activeClassroomId = newRef.id;
+        submissions = [];
+        els.classroomDialog.close();
+        render();
+        setStatus('Classroom created');
+        toast('Classroom created');
+    } catch (error) {
+        toast(error.message || 'Unable to create classroom');
     }
 }
 
@@ -472,6 +530,10 @@ function questionListName(questionBankListId) {
     if (!questionBankListId) return 'No question list';
     const list = questionBankLists.find(item => item.id === questionBankListId);
     return list?.name || questionBankListId;
+}
+
+function generateClassCode() {
+    return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 function sanitizeRich(value) {

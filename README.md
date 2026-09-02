@@ -6,7 +6,7 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 
 - `index.html` - login, classroom list, submission dashboard, and answer-detail modal.
 - `styles.css` - responsive phone, tablet, and desktop layout.
-- `app.js` - Firebase Auth, classroom and question-list queries, classroom updates, submission queries, detail rendering, and CSV export.
+- `app.js` - Firebase Auth, classroom and question-list queries, classroom creation/updates, submission queries, detail rendering, and CSV export.
 - `FIRESTORE_SCHEMA.md` - schema and query documentation.
 - `firestore.rules` - starter security rules notes for teacher dashboard access.
 
@@ -15,8 +15,8 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 1. Teacher signs in with Google through Firebase Auth.
 2. App queries `classrooms where creatorId == teacher.uid`.
 3. App queries `qb_lists_v1 where ownerUid == teacher.uid` for optional classroom question-list assignment.
-4. Teacher selects one of their classrooms.
-5. Teacher can edit classroom name, code, section name, enabled state, and optional question list.
+4. Teacher can create a classroom with name, code, section name, enabled state, and optional question list.
+5. Teacher selects or edits one of their classrooms.
 6. App loads matching `qb_quiz_submissions_v1` records using:
    - `classroomId == classroom.id`
    - `classroomId == classroom.classCode` when different
@@ -54,5 +54,5 @@ The app loads Firebase, KaTeX, and Mermaid from CDNs.
 ## Notes
 
 - Short-answer items are shown as manual review because student quiz submissions store `isCorrect: null`.
-- The dashboard updates owned `classrooms`, reads private `qb_lists_v1`, and reads `qb_quiz_submissions_v1`. It does not create classrooms or modify submissions.
+- The dashboard creates and updates owned `classrooms`, reads private `qb_lists_v1`, and reads `qb_quiz_submissions_v1`. It does not modify submissions.
 - For tighter production security, include `teacherUid` or `creatorId` in every submission at write time so Firestore rules can authorize teacher reads without relying on fallback client queries.
