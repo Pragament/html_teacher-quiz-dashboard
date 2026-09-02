@@ -35,6 +35,25 @@ const COLLECTIONS = {
     submissions: 'qb_quiz_submissions_v1'
 };
 
+const EXPORT_SETTINGS_KEY = 'teacherQuizDashboard.exportSettings.v1';
+const TOUR_PROMPT_DISABLED_KEY = 'teacherQuizDashboard.tourPromptDisabled.v1';
+const EXPORT_FIELDS = [
+    { id: 'classroomId', label: 'Classroom ID', header: 'classroomId', value: (s) => s.classroomId || activeClassroomId || '' },
+    { id: 'classCode', label: 'Class Code', header: 'classCode', value: (s, classroom) => classroom.classCode || '' },
+    { id: 'sectionId', label: 'Section ID', header: 'sectionId', value: (s, classroom) => s.sectionId || classroom.sectionId || '' },
+    { id: 'studentName', label: 'Student Name', header: 'studentName', value: (s) => s.studentName || '' },
+    { id: 'admissionNo', label: 'Admission No', header: 'admissionNo', value: (s) => s.admissionNo || '' },
+    { id: 'submittedAt', label: 'Submitted At', header: 'submittedAt', value: (s) => formatDate(s.submittedAtMillis) },
+    { id: 'subject', label: 'Subject', header: 'subject', value: (s) => s.subject || '' },
+    { id: 'chapters', label: 'Chapters', header: 'chapters', value: (s) => (s.chapters || []).join('|') },
+    { id: 'questionCount', label: 'Question Count', header: 'questionCount', value: (s) => s.questionCount || 0 },
+    { id: 'answeredCount', label: 'Answered Count', header: 'answeredCount', value: (s) => s.answeredCount || 0 },
+    { id: 'gradableCount', label: 'Gradable Count', header: 'gradableCount', value: (s) => s.gradableCount || 0 },
+    { id: 'correctCount', label: 'Correct Count', header: 'correctCount', value: (s) => s.correctCount || 0 },
+    { id: 'scorePercent', label: 'Score Percent', header: 'scorePercent', value: (s) => scorePercent(s) },
+    { id: 'manualReviewCount', label: 'Manual Review Count', header: 'manualReviewCount', value: (s) => manualCount(s) }
+];
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -44,6 +63,7 @@ let classrooms = [];
 let questionBankLists = [];
 let activeClassroomId = null;
 let submissions = [];
+let submissionViewMode = 'table';
 let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -52,12 +72,14 @@ const els = {
     statusText: $('statusText'),
     loginBtn: $('loginBtn'),
     loginHeroBtn: $('loginHeroBtn'),
+    tourBtn: $('tourBtn'),
     logoutBtn: $('logoutBtn'),
     refreshBtn: $('refreshBtn'),
     loginView: $('loginView'),
     classroomPanel: $('classroomPanel'),
     dashboardView: $('dashboardView'),
     teacherLabel: $('teacherLabel'),
+    createClassroomBtn: $('createClassroomBtn'),
     classroomCount: $('classroomCount'),
     classroomList: $('classroomList'),
     selectedClassroomTitle: $('selectedClassroomTitle'),
@@ -70,6 +92,16 @@ const els = {
     detailMeta: $('detailMeta'),
     detailStats: $('detailStats'),
     answerDetails: $('answerDetails'),
+    questionDialog: $('questionDialog'),
+    questionDetailTitle: $('questionDetailTitle'),
+    questionDetailMeta: $('questionDetailMeta'),
+    questionPrompt: $('questionPrompt'),
+    questionResponseList: $('questionResponseList'),
+    tourPromptDialog: $('tourPromptDialog'),
+    tourPromptForm: $('tourPromptForm'),
+    dontShowTourAgain: $('dontShowTourAgain'),
+    tableViewBtn: $('tableViewBtn'),
+    cardViewBtn: $('cardViewBtn'),
     classroomDialog: $('classroomDialog'),
     editClassroomTitle: $('editClassroomTitle'),
     editClassroomForm: $('editClassroomForm'),
@@ -80,6 +112,10 @@ const els = {
     editClassEnabled: $('editClassEnabled'),
     editQuestionBankList: $('editQuestionBankList'),
     saveClassroomBtn: $('saveClassroomBtn'),
+    exportDialog: $('exportDialog'),
+    exportForm: $('exportForm'),
+    exportFieldList: $('exportFieldList'),
+    includeQuestionResponses: $('includeQuestionResponses'),
     toast: $('toast')
 };
 
@@ -96,6 +132,7 @@ onAuthStateChanged(auth, async (user) => {
     els.topbar.hidden = !user;
     els.loginBtn.hidden = !!user;
     els.loginHeroBtn.hidden = !!user;
+    els.tourBtn.hidden = !user;
     els.logoutBtn.hidden = !user;
     els.refreshBtn.hidden = !user;
     els.loginView.hidden = !!user;
@@ -108,29 +145,132 @@ onAuthStateChanged(auth, async (user) => {
         activeClassroomId = null;
         setStatus('Sign in to view your classrooms');
         render();
+        promptGuidedTour();
         return;
     }
     els.teacherLabel.textContent = user.displayName || user.email || user.uid;
     await loadQuestionBankLists();
     await loadClassrooms();
+    promptGuidedTour();
 });
 
 function bindEvents() {
     els.loginBtn.addEventListener('click', login);
     els.loginHeroBtn.addEventListener('click', login);
+    els.tourBtn.addEventListener('click', startTeacherTour);
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.refreshBtn.addEventListener('click', refreshActive);
     $('createClassroomBtn').addEventListener('click', openClassroomCreator);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
+    $('closeQuestionBtn').addEventListener('click', () => els.questionDialog.close());
+    $('skipTourBtn').addEventListener('click', skipTourPrompt);
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
+    $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
     els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
-    $('exportCsvBtn').addEventListener('click', exportSubmissionsCsv);
+    els.tourPromptForm.addEventListener('submit', startPromptedTour);
+    els.exportForm.addEventListener('submit', exportSubmissionsCsv);
+    $('exportCsvBtn').addEventListener('click', openExportDialog);
+    els.tableViewBtn.addEventListener('click', () => setSubmissionViewMode('table'));
+    els.cardViewBtn.addEventListener('click', () => setSubmissionViewMode('cards'));
     filterIds.forEach(id => $(id).addEventListener('input', render));
     filterIds.forEach(id => $(id).addEventListener('change', render));
 }
 
 async function login() {
     await signInWithPopup(auth, new GoogleAuthProvider());
+}
+
+function promptGuidedTour() {
+    if (localStorage.getItem(TOUR_PROMPT_DISABLED_KEY) === 'true') return;
+    els.dontShowTourAgain.checked = false;
+    if (!els.tourPromptDialog.open) els.tourPromptDialog.showModal();
+}
+
+function startPromptedTour(event) {
+    event.preventDefault();
+    saveTourPromptPreference();
+    els.tourPromptDialog.close();
+    if (currentUser) startTeacherTour();
+    else startLoginTour();
+}
+
+function skipTourPrompt() {
+    saveTourPromptPreference();
+    els.tourPromptDialog.close();
+}
+
+function saveTourPromptPreference() {
+    if (els.dontShowTourAgain.checked) {
+        localStorage.setItem(TOUR_PROMPT_DISABLED_KEY, 'true');
+    }
+}
+
+function startLoginTour() {
+    if (!window.introJs) {
+        toast('Tour library is still loading');
+        return;
+    }
+    window.introJs().setOptions({
+        showProgress: true,
+        nextLabel: 'Next',
+        prevLabel: 'Back',
+        doneLabel: 'Done',
+        steps: [
+            {
+                element: els.loginView,
+                intro: 'Welcome to the Teacher Quiz Dashboard. Sign in to create classes, assign question lists, and review student quiz submissions.'
+            },
+            {
+                element: els.loginHeroBtn,
+                intro: 'Use Google Login with the teacher account that owns your classrooms.'
+            }
+        ]
+    }).start();
+}
+
+function startTeacherTour() {
+    if (!window.introJs) {
+        toast('Tour library is still loading');
+        return;
+    }
+    const tour = window.introJs().setOptions({
+        showProgress: true,
+        nextLabel: 'Next',
+        prevLabel: 'Back',
+        doneLabel: 'Done',
+        steps: [
+            {
+                element: els.createClassroomBtn,
+                intro: 'Start here to create a classroom for a new quiz or student group.'
+            },
+            {
+                element: els.editClassroomName,
+                intro: 'Give the classroom a clear name your teacher dashboard can recognize.'
+            },
+            {
+                element: els.editQuestionBankList,
+                intro: 'Optionally select one of your private question lists. This controls which saved bank list is attached to the classroom.'
+            },
+            {
+                element: els.editClassCode,
+                intro: 'This class code is what students use to join or submit to the classroom. You can keep the generated code or type your own.'
+            },
+            {
+                element: els.saveClassroomBtn,
+                intro: 'Save the classroom when the name, question list, and code look right.'
+            },
+            {
+                element: els.classroomList,
+                intro: 'After saving, share the class code shown on the classroom card with students.'
+            }
+        ]
+    });
+    tour.onbeforechange((target) => {
+        if ([els.editClassroomName, els.editQuestionBankList, els.editClassCode, els.saveClassroomBtn].includes(target)) {
+            ensureClassroomCreatorOpen();
+        }
+    });
+    tour.start();
 }
 
 async function loadQuestionBankLists() {
@@ -240,7 +380,8 @@ function renderClassrooms() {
     });
 }
 
-function openClassroomCreator() {
+function openClassroomCreator(options = {}) {
+    const modal = options.modal !== false;
     els.editClassroomTitle.textContent = 'Create Classroom';
     els.editClassroomId.value = '';
     els.editClassroomName.value = '';
@@ -253,7 +394,12 @@ function openClassroomCreator() {
     `;
     els.editQuestionBankList.value = '';
     els.saveClassroomBtn.textContent = 'Create Classroom';
-    els.classroomDialog.showModal();
+    if (modal) els.classroomDialog.showModal();
+    else els.classroomDialog.show();
+}
+
+function ensureClassroomCreatorOpen() {
+    if (!els.classroomDialog.open) openClassroomCreator({ modal: false });
 }
 
 function openClassroomEditor(classroomId) {
@@ -378,10 +524,99 @@ function setStats(submissionCount, studentCount, average, manual) {
 function renderSubmissions() {
     const filtered = filteredSubmissions();
     els.submissionSummary.textContent = `${filtered.length} visible of ${submissions.length} loaded submissions`;
-    els.submissionList.innerHTML = filtered.length ? filtered.map(submissionCard).join('') : '<div class="empty-card">No submissions match these filters.</div>';
+    els.tableViewBtn.classList.toggle('active', submissionViewMode === 'table');
+    els.cardViewBtn.classList.toggle('active', submissionViewMode === 'cards');
+    els.submissionList.className = submissionViewMode === 'table' ? 'submission-table-wrap' : 'submission-list';
+    els.submissionList.innerHTML = filtered.length
+        ? submissionViewMode === 'table' ? submissionTable(filtered) : filtered.map(submissionCard).join('')
+        : '<div class="empty-card">No submissions match these filters.</div>';
     document.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', () => openSubmissionDetail(btn.dataset.detail));
     });
+    document.querySelectorAll('[data-question-index]').forEach(btn => {
+        btn.addEventListener('click', () => openQuestionDetail(Number(btn.dataset.questionIndex)));
+    });
+}
+
+function setSubmissionViewMode(mode) {
+    submissionViewMode = mode;
+    renderSubmissions();
+}
+
+function submissionTable(items) {
+    const maxAnswers = items.reduce((max, s) => Math.max(max, (s.answers || []).length), 0);
+    const questionHeaders = Array.from({ length: maxAnswers }, (_, index) => `
+        <th scope="col">
+            <button class="question-head-btn" type="button" data-question-index="${index}">Q${index + 1}</button>
+        </th>
+    `).join('');
+    return `
+        <table class="submission-table">
+            <thead>
+                <tr>
+                    <th scope="col">Student</th>
+                    <th scope="col">Roll</th>
+                    ${questionHeaders}
+                    <th scope="col">Score</th>
+                    <th scope="col">Review</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${items.map(s => `
+                    <tr>
+                        <th scope="row">
+                            <button class="table-link" type="button" data-detail="${s.id}">${esc(s.studentName || 'Student')}</button>
+                        </th>
+                        <td>${esc(s.admissionNo || '')}</td>
+                        ${Array.from({ length: maxAnswers }, (_, index) => answerCell((s.answers || [])[index])).join('')}
+                        <td>${scorePercent(s)}%</td>
+                        <td>${manualCount(s) ? esc(`${manualCount(s)} manual`) : ''}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function answerCell(answer) {
+    const state = answerState(answer);
+    return `<td class="answer-cell ${state.className}" title="${esc(state.title)}">${esc(state.label)}</td>`;
+}
+
+function openQuestionDetail(index) {
+    const visible = filteredSubmissions();
+    const answer = visible.map(s => (s.answers || [])[index]).find(Boolean);
+    if (!answer) return;
+    const responses = visible.map(s => ({ submission: s, answer: (s.answers || [])[index] }));
+    const answered = responses.filter(item => item.answer);
+    const correct = answered.filter(item => item.answer.isCorrect === true).length;
+    const wrong = answered.filter(item => item.answer.isCorrect === false).length;
+    const manual = answered.filter(item => item.answer && item.answer.isCorrect !== true && item.answer.isCorrect !== false).length;
+
+    els.questionDetailTitle.textContent = `Question ${index + 1}`;
+    els.questionDetailMeta.textContent = `${correct} correct · ${wrong} wrong · ${manual} manual · ${visible.length - answered.length} missing`;
+    els.questionPrompt.innerHTML = `
+        <div class="rich-content">${sanitizeRich(answer.promptHtml || '')}</div>
+        <div><strong>Correct answer:</strong> ${esc(answer.correctAnswer || 'Teacher review')}</div>
+        <div class="answer-footer">
+            <span>${esc(answer.type || '')}</span>
+            ${answer.questionId ? `<span>${esc(answer.questionId)}</span>` : ''}
+        </div>
+    `;
+    els.questionResponseList.innerHTML = responses.map(({ submission, answer: itemAnswer }) => {
+        const state = answerState(itemAnswer);
+        return `
+            <article class="question-response-row">
+                <div>
+                    <strong>${esc(submission.studentName || 'Student')}</strong>
+                    <p>${esc(submission.admissionNo || '')}</p>
+                </div>
+                <span class="answer-pill ${state.className}">${esc(state.label || state.title)}</span>
+            </article>
+        `;
+    }).join('');
+    renderRich(els.questionPrompt);
+    els.questionDialog.showModal();
 }
 
 function filteredSubmissions() {
@@ -455,43 +690,75 @@ function openSubmissionDetail(id) {
     els.detailDialog.showModal();
 }
 
-function exportSubmissionsCsv() {
-    const rows = [[
-        'classroomId',
-        'classCode',
-        'sectionId',
-        'studentName',
-        'admissionNo',
-        'submittedAt',
-        'subject',
-        'chapters',
-        'questionCount',
-        'answeredCount',
-        'gradableCount',
-        'correctCount',
-        'scorePercent',
-        'manualReviewCount'
-    ]];
+function openExportDialog() {
+    const settings = loadExportSettings();
+    els.exportFieldList.innerHTML = EXPORT_FIELDS.map(field => `
+        <label class="check-field">
+            <input type="checkbox" value="${field.id}" ${settings.fieldIds.includes(field.id) ? 'checked' : ''} />
+            <span>${esc(field.label)}</span>
+        </label>
+    `).join('');
+    els.includeQuestionResponses.checked = settings.includeQuestionResponses;
+    els.exportDialog.showModal();
+}
+
+function exportSubmissionsCsv(event) {
+    event.preventDefault();
+    const fieldIds = Array.from(els.exportFieldList.querySelectorAll('input:checked')).map(input => input.value);
+    if (!fieldIds.length && !els.includeQuestionResponses.checked) {
+        toast('Select at least one export field');
+        return;
+    }
+    const settings = {
+        fieldIds,
+        includeQuestionResponses: els.includeQuestionResponses.checked
+    };
+    saveExportSettings(settings);
+
+    const selectedFields = EXPORT_FIELDS.filter(field => fieldIds.includes(field.id));
+    const exportedSubmissions = filteredSubmissions();
+    const rows = [[...selectedFields.map(field => field.header)]];
+    if (settings.includeQuestionResponses) {
+        const maxAnswers = exportedSubmissions.reduce((max, s) => Math.max(max, (s.answers || []).length), 0);
+        for (let index = 0; index < maxAnswers; index += 1) {
+            rows[0].push(`question${index + 1}Response`);
+        }
+    }
     const classroom = classrooms.find(c => c.id === activeClassroomId) || {};
-    filteredSubmissions().forEach(s => {
-        rows.push([
-            s.classroomId || activeClassroomId || '',
-            classroom.classCode || '',
-            s.sectionId || classroom.sectionId || '',
-            s.studentName || '',
-            s.admissionNo || '',
-            formatDate(s.submittedAtMillis),
-            s.subject || '',
-            (s.chapters || []).join('|'),
-            s.questionCount || 0,
-            s.answeredCount || 0,
-            s.gradableCount || 0,
-            s.correctCount || 0,
-            scorePercent(s),
-            manualCount(s)
-        ]);
+    exportedSubmissions.forEach(s => {
+        const row = selectedFields.map(field => field.value(s, classroom));
+        if (settings.includeQuestionResponses) {
+            const responseCount = rows[0].length - selectedFields.length;
+            for (let index = 0; index < responseCount; index += 1) {
+                row.push(answerResponseText((s.answers || [])[index]));
+            }
+        }
+        rows.push(row);
     });
+    els.exportDialog.close();
     downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' }), 'teacher-quiz-submissions.csv');
+}
+
+function loadExportSettings() {
+    const defaults = {
+        fieldIds: EXPORT_FIELDS.map(field => field.id),
+        includeQuestionResponses: false
+    };
+    try {
+        const parsed = JSON.parse(localStorage.getItem(EXPORT_SETTINGS_KEY) || 'null');
+        if (!parsed || !Array.isArray(parsed.fieldIds)) return defaults;
+        const validFieldIds = parsed.fieldIds.filter(id => EXPORT_FIELDS.some(field => field.id === id));
+        return {
+            fieldIds: validFieldIds.length ? validFieldIds : defaults.fieldIds,
+            includeQuestionResponses: parsed.includeQuestionResponses === true
+        };
+    } catch {
+        return defaults;
+    }
+}
+
+function saveExportSettings(settings) {
+    localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
 }
 
 async function renderRich(root) {
@@ -521,6 +788,24 @@ function manualCount(submission) {
     return (submission.answers || []).filter(answer => answer.isCorrect === null).length;
 }
 
+function answerResponseText(answer) {
+    if (!answer) return '';
+    if (answer.displayAnswer) return htmlToText(answer.displayAnswer);
+    if (answer.shortAnswer) return htmlToText(answer.shortAnswer);
+    if (answer.fibAnswers?.length) return answer.fibAnswers.join('|');
+    if (answer.trueFalseAnswer !== null && answer.trueFalseAnswer !== undefined) return String(answer.trueFalseAnswer);
+    if (answer.selectedOptions?.length) return answer.selectedOptions.join('|');
+    return '';
+}
+
+function answerState(answer) {
+    if (!answer) return { className: 'missing', label: '', title: 'No answer recorded' };
+    const response = answerResponseText(answer);
+    if (answer.isCorrect === true) return { className: 'correct', label: response || 'Correct', title: response || 'Correct' };
+    if (answer.isCorrect === false) return { className: 'wrong', label: response || 'Wrong', title: response || 'Wrong' };
+    return { className: 'manual', label: response || 'S', title: response || 'Manual review' };
+}
+
 function formatDate(value) {
     if (!value) return '';
     return new Date(value).toLocaleString();
@@ -534,6 +819,12 @@ function questionListName(questionBankListId) {
 
 function generateClassCode() {
     return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function htmlToText(value) {
+    const template = document.createElement('template');
+    template.innerHTML = String(value || '');
+    return template.content.textContent || String(value || '');
 }
 
 function sanitizeRich(value) {

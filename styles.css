@@ -78,6 +78,7 @@ button {
 .topbar-actions,
 .panel-head,
 .panel-head-actions,
+.submission-actions,
 .filters-grid,
 .submission-head,
 .submission-meta,
@@ -93,12 +94,17 @@ button {
 .topbar-actions,
 .panel-head,
 .panel-head-actions,
+.submission-actions,
 .submission-head,
 .answer-head {
     justify-content: space-between;
 }
 
 .panel-head-actions {
+    justify-content: flex-end;
+}
+
+.submission-actions {
     justify-content: flex-end;
 }
 
@@ -326,6 +332,193 @@ button {
     margin-top: 14px;
 }
 
+.segmented-control {
+    display: inline-flex;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+}
+
+.segmented-control button {
+    min-height: 34px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    background: transparent;
+    color: #41546b;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.segmented-control button:last-child {
+    border-right: 0;
+}
+
+.segmented-control button.active {
+    background: var(--primary);
+    color: #fff;
+}
+
+.submission-table-wrap {
+    overflow-x: auto;
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.submission-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.submission-table th,
+.submission-table td {
+    height: 42px;
+    border: 1px solid #1f2933;
+    padding: 7px 8px;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.submission-table thead th {
+    background: #8a8a8a;
+    color: #fff;
+}
+
+.question-head-btn {
+    width: 100%;
+    min-height: 24px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-weight: 900;
+}
+
+.question-head-btn::after {
+    content: "i";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 999px;
+    color: #fff;
+    font-size: 10px;
+    font-style: italic;
+    opacity: 0.85;
+}
+
+.submission-table tbody th {
+    width: 150px;
+    background: #fff;
+}
+
+.submission-table td {
+    background: #fff;
+}
+
+.submission-table .answer-cell {
+    width: 66px;
+    color: #fff;
+}
+
+.submission-table .answer-cell.correct {
+    background: #00851f;
+}
+
+.submission-table .answer-cell.wrong {
+    background: #ff1717;
+}
+
+.submission-table .answer-cell.manual,
+.submission-table .answer-cell.missing {
+    background: #cfcfcf;
+    color: #fff;
+}
+
+.table-link {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.question-modal {
+    width: min(860px, calc(100vw - 24px));
+}
+
+.tour-prompt-modal {
+    width: min(520px, calc(100vw - 24px));
+}
+
+.question-prompt {
+    display: grid;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 12px;
+}
+
+.question-response-list {
+    display: grid;
+    gap: 8px;
+}
+
+.question-response-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px 12px;
+}
+
+.question-response-row p {
+    margin: 2px 0 0;
+}
+
+.answer-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    max-width: 55%;
+    border-radius: 999px;
+    color: #fff;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.answer-pill.correct {
+    background: #00851f;
+}
+
+.answer-pill.wrong {
+    background: #ff1717;
+}
+
+.answer-pill.manual,
+.answer-pill.missing {
+    background: #cfcfcf;
+}
+
 .submission-card {
     display: grid;
     gap: 9px;
@@ -388,6 +581,10 @@ button {
     width: min(620px, calc(100vw - 24px));
 }
 
+.export-modal {
+    width: min(720px, calc(100vw - 24px));
+}
+
 .modal-card {
     display: grid;
     gap: 14px;
@@ -403,6 +600,38 @@ button {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+}
+
+.export-field-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.check-field {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-soft);
+    padding: 9px 10px;
+    color: #41546b;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.check-field input {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--primary);
+}
+
+.check-field span {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .toggle-field {
@@ -489,12 +718,20 @@ button {
     }
 
     .topbar-actions .btn,
-    .modal-head .btn {
+    .modal-head .btn,
+    .submission-actions,
+    .submission-actions .btn,
+    .segmented-control {
         width: 100%;
+    }
+
+    .segmented-control button {
+        flex: 1 1 0;
     }
 
     .classroom-list,
     .classroom-edit-grid,
+    .export-field-list,
     .stats-grid,
     .filters-grid {
         grid-template-columns: 1fr;

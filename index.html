@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Teacher Quiz Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/introjs.min.css" />
     <link rel="stylesheet" href="styles.css" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/intro.min.js"></script>
 </head>
 <body>
     <header class="topbar" id="topbar" hidden>
@@ -17,6 +19,7 @@
         </div>
         <div class="topbar-actions">
             <button class="btn primary" id="loginBtn">Google Login</button>
+            <button class="btn" id="tourBtn" hidden>Tour</button>
             <button class="btn" id="refreshBtn" hidden>Refresh</button>
             <button class="btn" id="logoutBtn" hidden>Logout</button>
         </div>
@@ -84,7 +87,13 @@
                         <h2>Quiz Submissions</h2>
                         <p id="submissionSummary">Choose a classroom to load submissions.</p>
                     </div>
-                    <button class="btn" id="exportCsvBtn">Export CSV</button>
+                    <div class="submission-actions">
+                        <div class="segmented-control" aria-label="Submission view">
+                            <button class="active" id="tableViewBtn" type="button">Table</button>
+                            <button id="cardViewBtn" type="button">Cards</button>
+                        </div>
+                        <button class="btn" id="exportCsvBtn">Export CSV</button>
+                    </div>
                 </div>
                 <div class="filters-grid">
                     <label class="field">
@@ -128,6 +137,39 @@
         </div>
     </dialog>
 
+    <dialog id="questionDialog" class="modal question-modal">
+        <div class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2 id="questionDetailTitle">Question Detail</h2>
+                    <p id="questionDetailMeta"></p>
+                </div>
+                <button class="btn" id="closeQuestionBtn" type="button">Close</button>
+            </div>
+            <div id="questionPrompt" class="question-prompt"></div>
+            <div id="questionResponseList" class="question-response-list"></div>
+        </div>
+    </dialog>
+
+    <dialog id="tourPromptDialog" class="modal tour-prompt-modal">
+        <form id="tourPromptForm" class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2>Take The Guided Tour?</h2>
+                    <p>Walk through login, classroom creation, question-list selection, and class-code sharing.</p>
+                </div>
+                <button class="btn" id="skipTourBtn" type="button">Skip</button>
+            </div>
+            <label class="toggle-field">
+                <input id="dontShowTourAgain" type="checkbox" />
+                <span>Do not show this again on refresh</span>
+            </label>
+            <div class="form-actions">
+                <button class="btn primary" type="submit">Start Tour</button>
+            </div>
+        </form>
+    </dialog>
+
     <dialog id="classroomDialog" class="modal classroom-modal">
         <form id="editClassroomForm" class="modal-card">
             <input id="editClassroomId" type="hidden" />
@@ -162,6 +204,26 @@
             </label>
             <div class="form-actions">
                 <button class="btn primary" id="saveClassroomBtn" type="submit">Save Classroom</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="exportDialog" class="modal export-modal">
+        <form id="exportForm" class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2>Export CSV</h2>
+                    <p>Choose the fields to include this time.</p>
+                </div>
+                <button class="btn" id="cancelExportBtn" type="button">Cancel</button>
+            </div>
+            <div id="exportFieldList" class="export-field-list"></div>
+            <label class="toggle-field">
+                <input id="includeQuestionResponses" type="checkbox" />
+                <span>Include question responses</span>
+            </label>
+            <div class="form-actions">
+                <button class="btn primary" type="submit">Download CSV</button>
             </div>
         </form>
     </dialog>

@@ -21,10 +21,11 @@ Independent responsive app for teachers to sign in with Google, manage classroom
    - `classroomId == classroom.id`
    - `classroomId == classroom.classCode` when different
    - `sectionId == classroom.sectionId`
-7. Submissions are de-duplicated, sorted newest first, and shown with summary statistics.
+7. Submissions are de-duplicated, sorted newest first, and shown in a table by default with a card-view switch.
 8. Teacher can filter by student, subject, chapter, and result type.
 9. Teacher can open a detailed submission review with per-question answers, correct answers, score state, and manual-review markers.
-10. Teacher can export the filtered submission list as CSV.
+10. Teacher can choose CSV fields, optionally include per-question responses, and export the filtered submission list.
+11. Teachers can use the guided tour to walk through login, classroom creation, question-list selection, and sharing the class code.
 
 ## Run Locally
 
@@ -40,7 +41,7 @@ Open:
 http://localhost:8000/teacher-quiz-dashboard/
 ```
 
-The app loads Firebase, KaTeX, and Mermaid from CDNs.
+The app loads Firebase, KaTeX, Mermaid, and Intro.js from CDNs.
 
 ## Firebase Setup
 
@@ -54,5 +55,7 @@ The app loads Firebase, KaTeX, and Mermaid from CDNs.
 ## Notes
 
 - Short-answer items are shown as manual review because student quiz submissions store `isCorrect: null`.
+- CSV export field selections are saved in browser `localStorage` for the next export.
+- Guided tour refresh prompts can be disabled, and that preference is saved in browser `localStorage`.
 - The dashboard creates and updates owned `classrooms`, reads private `qb_lists_v1`, and reads `qb_quiz_submissions_v1`. It does not modify submissions.
 - For tighter production security, include `teacherUid` or `creatorId` in every submission at write time so Firestore rules can authorize teacher reads without relying on fallback client queries.
