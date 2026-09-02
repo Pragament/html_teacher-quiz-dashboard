@@ -10,7 +10,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
 </head>
 <body>
-    <header class="topbar">
+    <header class="topbar" id="topbar" hidden>
         <div>
             <h1>Teacher Quiz Dashboard</h1>
             <p id="statusText">Sign in to view your classrooms</p>
@@ -24,9 +24,11 @@
 
     <main class="app-shell">
         <section class="panel login-panel" id="loginView">
-            <h2>Teacher Login</h2>
-            <p>Use the Google account that created the classroom documents.</p>
-            <button class="btn primary wide-btn" id="loginHeroBtn">Continue with Google</button>
+            <div class="login-copy">
+                <h1>Teacher Quiz Dashboard</h1>
+                <p>Sign in with the Google account that owns your classrooms.</p>
+            </div>
+            <button class="btn primary wide-btn" id="loginHeroBtn">Google Login</button>
         </section>
 
         <aside class="panel classroom-panel" id="classroomPanel" hidden>

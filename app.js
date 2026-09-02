@@ -47,6 +47,7 @@ let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
 const els = {
+    topbar: $('topbar'),
     statusText: $('statusText'),
     loginBtn: $('loginBtn'),
     loginHeroBtn: $('loginHeroBtn'),
@@ -90,6 +91,7 @@ bindEvents();
 
 onAuthStateChanged(auth, async (user) => {
     currentUser = user;
+    els.topbar.hidden = !user;
     els.loginBtn.hidden = !!user;
     els.loginHeroBtn.hidden = !!user;
     els.logoutBtn.hidden = !user;
