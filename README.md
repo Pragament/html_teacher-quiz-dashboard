@@ -17,17 +17,18 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 2. App queries `classrooms where creatorId == teacher.uid`.
 3. App queries `qb_lists_v1 where ownerUid == teacher.uid` for optional classroom question-list assignment.
 4. Teacher can view sections they are listed on as `admin` or `viewer`, and open a section roster from `classSections/{sectionId}/students`.
-5. Teacher can create a classroom with name, code, section dropdown, enabled state, and optional question list.
-6. Teacher selects or edits one of their classrooms.
-7. App loads matching `qb_quiz_submissions_v1` records using:
+5. Section admins can also see all classrooms attached to that section.
+6. Teacher can create a classroom with name, code, section dropdown, enabled state, and optional question list.
+7. Teacher selects or edits one of their classrooms.
+8. App loads matching `qb_quiz_submissions_v1` records using:
    - `classroomId == classroom.id`
    - `classroomId == classroom.classCode` when different
    - `sectionId == classroom.sectionId`
-8. Submissions are de-duplicated, sorted newest first, and shown in a table by default with a card-view switch.
-9. Teacher can filter by student, subject, chapter, and result type.
-10. Teacher can open a detailed submission review with per-question answers, correct answers, score state, and manual-review markers.
-11. Teacher can choose CSV fields, optionally include per-question responses, and export the filtered submission list.
-12. Teachers can use the guided tour to walk through login, classroom creation, question-list selection, and sharing the class code.
+9. Submissions are de-duplicated, sorted newest first, and shown in a table by default with a card-view switch.
+10. Teacher can filter by student, subject, chapter, and result type.
+11. Teacher can open a detailed submission review with per-question answers, correct answers, score state, and manual-review markers.
+12. Teacher can choose CSV fields, optionally include per-question responses, and export the filtered submission list.
+13. Teachers can use the guided tour to walk through login, classroom creation, question-list selection, and sharing the class code.
 
 ## Run Locally
 

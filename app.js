@@ -38,6 +38,9 @@ const COLLECTIONS = {
 
 const EXPORT_SETTINGS_KEY = 'teacherQuizDashboard.exportSettings.v1';
 const TOUR_PROMPT_DISABLED_KEY = 'teacherQuizDashboard.tourPromptDisabled.v1';
+const GEMINI_KEY_STORAGE_KEY = 'teacherQuizDashboard.geminiApiKey.v1';
+const AI_REVIEW_STORAGE_KEY = 'teacherQuizDashboard.aiReviews.v1';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const EXPORT_FIELDS = [
     { id: 'classroomId', label: 'Classroom ID', header: 'classroomId', value: (s) => s.classroomId || activeClassroomId || '' },
     { id: 'classCode', label: 'Class Code', header: 'classCode', value: (s, classroom) => classroom.classCode || '' },
@@ -63,11 +66,14 @@ let currentUser = null;
 let classrooms = [];
 let classSections = [];
 let sectionStudents = [];
+let sectionClassrooms = [];
 let questionBankLists = [];
 let activeClassroomId = null;
 let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'table';
+let activeQuestionReview = null;
+let aiReviews = loadAiReviews();
 let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -77,6 +83,7 @@ const els = {
     loginBtn: $('loginBtn'),
     loginHeroBtn: $('loginHeroBtn'),
     tourBtn: $('tourBtn'),
+    geminiKeyBtn: $('geminiKeyBtn'),
     logoutBtn: $('logoutBtn'),
     refreshBtn: $('refreshBtn'),
     loginView: $('loginView'),
@@ -90,6 +97,7 @@ const els = {
     sectionSummary: $('sectionSummary'),
     sectionList: $('sectionList'),
     studentRoster: $('studentRoster'),
+    sectionClassrooms: $('sectionClassrooms'),
     selectedClassroomTitle: $('selectedClassroomTitle'),
     selectedClassroomMeta: $('selectedClassroomMeta'),
     enabledChip: $('enabledChip'),
@@ -105,6 +113,14 @@ const els = {
     questionDetailMeta: $('questionDetailMeta'),
     questionPrompt: $('questionPrompt'),
     questionResponseList: $('questionResponseList'),
+    aiReviewBtn: $('aiReviewBtn'),
+    saveAiReviewOverridesBtn: $('saveAiReviewOverridesBtn'),
+    aiReviewStatus: $('aiReviewStatus'),
+    geminiDialog: $('geminiDialog'),
+    geminiKeyForm: $('geminiKeyForm'),
+    geminiApiKey: $('geminiApiKey'),
+    geminiKeyStatus: $('geminiKeyStatus'),
+    removeGeminiKeyBtn: $('removeGeminiKeyBtn'),
     tourPromptDialog: $('tourPromptDialog'),
     tourPromptForm: $('tourPromptForm'),
     dontShowTourAgain: $('dontShowTourAgain'),
@@ -141,6 +157,7 @@ onAuthStateChanged(auth, async (user) => {
     els.loginBtn.hidden = !!user;
     els.loginHeroBtn.hidden = !!user;
     els.tourBtn.hidden = !user;
+    els.geminiKeyBtn.hidden = !user;
     els.logoutBtn.hidden = !user;
     els.refreshBtn.hidden = !user;
     els.loginView.hidden = !!user;
@@ -150,6 +167,7 @@ onAuthStateChanged(auth, async (user) => {
         classrooms = [];
         classSections = [];
         sectionStudents = [];
+        sectionClassrooms = [];
         questionBankLists = [];
         submissions = [];
         activeClassroomId = null;
@@ -170,11 +188,17 @@ function bindEvents() {
     els.loginBtn.addEventListener('click', login);
     els.loginHeroBtn.addEventListener('click', login);
     els.tourBtn.addEventListener('click', startTeacherTour);
+    els.geminiKeyBtn.addEventListener('click', openGeminiDialog);
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.refreshBtn.addEventListener('click', refreshActive);
     $('createClassroomBtn').addEventListener('click', openClassroomCreator);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
     $('closeQuestionBtn').addEventListener('click', () => els.questionDialog.close());
+    $('cancelGeminiBtn').addEventListener('click', () => els.geminiDialog.close());
+    els.geminiKeyForm.addEventListener('submit', saveGeminiKey);
+    els.removeGeminiKeyBtn.addEventListener('click', removeGeminiKey);
+    els.aiReviewBtn.addEventListener('click', reviewActiveQuestionWithGemini);
+    els.saveAiReviewOverridesBtn.addEventListener('click', saveAiReviewOverrides);
     $('skipTourBtn').addEventListener('click', skipTourPrompt);
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
     $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
@@ -317,10 +341,12 @@ async function loadClassSections() {
         if (activeSectionId && !classSections.some(section => section.id === activeSectionId)) {
             activeSectionId = null;
             sectionStudents = [];
+            sectionClassrooms = [];
         }
     } catch (error) {
         classSections = [];
         sectionStudents = [];
+        sectionClassrooms = [];
         activeSectionId = null;
         toast('Unable to load sections');
     }
@@ -331,17 +357,25 @@ async function loadStudentsForSection(sectionId) {
     if (!section) return;
     activeSectionId = sectionId;
     sectionStudents = [];
+    sectionClassrooms = [];
     renderSections();
     try {
         const snap = await getDocs(collection(db, COLLECTIONS.classSections, sectionId, 'students'));
         sectionStudents = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
             return String(a.admissionNo || a.id).localeCompare(String(b.admissionNo || b.id), undefined, { numeric: true });
         });
+        if (canAdminSection(section)) {
+            const classroomSnap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('sectionId', '==', sectionId)));
+            sectionClassrooms = classroomSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+                return (b.createdDate || 0) - (a.createdDate || 0);
+            });
+        }
         renderSections();
     } catch (error) {
         sectionStudents = [];
+        sectionClassrooms = [];
         renderSections();
-        toast('Unable to load students');
+        toast('Unable to load section details');
     }
 }
 
@@ -375,7 +409,7 @@ async function refreshActive() {
 }
 
 async function loadSubmissionsForClassroom(classroomId) {
-    const classroom = classrooms.find(c => c.id === classroomId);
+    const classroom = findClassroom(classroomId);
     if (!classroom) return;
     setStatus('Loading submissions...');
     activeClassroomId = classroomId;
@@ -476,9 +510,41 @@ function renderSections() {
             </div>
         ` : '<div class="empty-card">No students found in this section.</div>'
         : '';
+    els.sectionClassrooms.innerHTML = activeSectionId && canAdminSection(classSections.find(section => section.id === activeSectionId) || {})
+        ? `
+            <div class="section-subhead">
+                <strong>Classrooms</strong>
+                <span>${sectionClassrooms.length}</span>
+            </div>
+            ${sectionClassrooms.length ? sectionClassrooms.map(classroom => `
+                <article class="section-classroom-card">
+                    <button class="section-classroom-main" type="button" data-section-classroom="${classroom.id}">
+                        <strong>${esc(classroom.className || classroom.classCode || classroom.id)}</strong>
+                        <span>Code ${esc(classroom.classCode || classroom.id)}</span>
+                        <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
+                    </button>
+                    ${classroom.creatorId === currentUser.uid ? `<button class="btn small" type="button" data-edit-classroom="${classroom.id}">Edit</button>` : ''}
+                </article>
+            `).join('') : '<div class="empty-card">No classrooms found in this section.</div>'}
+        `
+        : '';
     document.querySelectorAll('[data-section]').forEach(btn => {
         btn.addEventListener('click', () => loadStudentsForSection(btn.dataset.section));
     });
+    document.querySelectorAll('[data-section-classroom]').forEach(btn => {
+        btn.addEventListener('click', () => selectSectionClassroom(btn.dataset.sectionClassroom));
+    });
+    els.sectionClassrooms.querySelectorAll('[data-edit-classroom]').forEach(btn => {
+        btn.addEventListener('click', () => editSectionClassroom(btn.dataset.editClassroom));
+    });
+}
+
+function selectSectionClassroom(classroomId) {
+    loadSubmissionsForClassroom(classroomId);
+}
+
+function editSectionClassroom(classroomId) {
+    openClassroomEditor(classroomId);
 }
 
 function openClassroomCreator(options = {}) {
@@ -512,7 +578,7 @@ function renderSectionOptions(selectedSectionId = '') {
 }
 
 function openClassroomEditor(classroomId) {
-    const classroom = classrooms.find(c => c.id === classroomId);
+    const classroom = findClassroom(classroomId);
     if (!classroom) return;
     els.editClassroomTitle.textContent = `Edit ${classroom.className || classroom.classCode || classroom.id}`;
     els.editClassroomId.value = classroom.id;
@@ -616,7 +682,7 @@ async function createClassroom(formValues, selectedList, selectedSection) {
 }
 
 function renderSelectedClassroom() {
-    const classroom = classrooms.find(c => c.id === activeClassroomId);
+    const classroom = findClassroom(activeClassroomId);
     if (!classroom) {
         els.selectedClassroomTitle.textContent = 'Select a classroom';
         els.selectedClassroomMeta.textContent = '';
@@ -728,20 +794,64 @@ function openQuestionDetail(index) {
             ${answer.questionId ? `<span>${esc(answer.questionId)}</span>` : ''}
         </div>
     `;
+    activeQuestionReview = { index, answer, responses };
+    updateAiReviewControls();
+    renderQuestionResponses();
+    renderRich(els.questionPrompt);
+    els.questionDialog.showModal();
+}
+
+function updateAiReviewControls(message = '') {
+    if (!activeQuestionReview) return;
+    const reviewable = activeQuestionReview.responses.filter(({ answer }) => isReviewableAnswer(answer)).length;
+    const hasKey = !!loadGeminiKey();
+    els.aiReviewBtn.disabled = reviewable === 0;
+    els.saveAiReviewOverridesBtn.disabled = activeQuestionReview.responses.length === 0;
+    if (message) {
+        els.aiReviewStatus.textContent = message;
+    } else if (!reviewable) {
+        els.aiReviewStatus.textContent = 'Gemini review is available for FIB and short-answer questions only.';
+    } else {
+        els.aiReviewStatus.textContent = `${reviewable} response${reviewable === 1 ? '' : 's'} ready for AI review. ${hasKey ? 'Gemini key saved.' : 'Add your Gemini key before reviewing.'}`;
+    }
+}
+
+function renderQuestionResponses() {
+    if (!activeQuestionReview) return;
+    const { index, responses } = activeQuestionReview;
     els.questionResponseList.innerHTML = responses.map(({ submission, answer: itemAnswer }) => {
         const state = answerState(itemAnswer);
+        const responseText = answerResponseText(itemAnswer);
+        const reviewable = isReviewableAnswer(itemAnswer);
+        const key = reviewKey(submission, itemAnswer, index);
+        const review = key ? aiReviews[key] : null;
         return `
-            <article class="question-response-row">
-                <div>
-                    <strong>${esc(submission.studentName || 'Student')}</strong>
-                    <p>${esc(submission.admissionNo || '')}</p>
+            <article class="question-response-row ai-response-row" data-review-key="${esc(key)}">
+                <div class="question-response-main">
+                    <div>
+                        <strong>${esc(submission.studentName || 'Student')}</strong>
+                        <p>${esc(submission.admissionNo || '')}</p>
+                    </div>
+                    <div class="exact-response">
+                        <span>Exact response</span>
+                        <p>${esc(responseText || 'Not answered')}</p>
+                    </div>
                 </div>
                 <span class="answer-pill ${state.className}">${esc(state.label || state.title)}</span>
+                <div class="ai-score-editor">
+                    <label class="field compact-field">
+                        <span>Marks (0-4)</span>
+                        <input class="review-marks" type="number" min="0" max="4" step="1" value="${review?.marks ?? ''}" ${reviewable ? '' : 'disabled'} />
+                    </label>
+                    <label class="field compact-field">
+                        <span>Reason</span>
+                        <textarea class="review-reason" rows="2" ${reviewable ? '' : 'disabled'}>${esc(review?.reason || '')}</textarea>
+                    </label>
+                    <p class="review-source">${review ? esc(review.source === 'teacher' ? 'Teacher override saved' : 'AI generated score') : reviewable ? 'Not reviewed yet' : 'AI review not available for this answer type'}</p>
+                </div>
             </article>
         `;
     }).join('');
-    renderRich(els.questionPrompt);
-    els.questionDialog.showModal();
 }
 
 function filteredSubmissions() {
@@ -849,7 +959,7 @@ function exportSubmissionsCsv(event) {
             rows[0].push(`question${index + 1}Response`);
         }
     }
-    const classroom = classrooms.find(c => c.id === activeClassroomId) || {};
+    const classroom = findClassroom(activeClassroomId) || {};
     exportedSubmissions.forEach(s => {
         const row = selectedFields.map(field => field.value(s, classroom));
         if (settings.includeQuestionResponses) {
@@ -884,6 +994,223 @@ function loadExportSettings() {
 
 function saveExportSettings(settings) {
     localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function openGeminiDialog() {
+    const key = loadGeminiKey();
+    els.geminiApiKey.value = key;
+    els.geminiKeyStatus.textContent = key
+        ? 'A Gemini key is saved in this browser. Paste a new one to change it.'
+        : 'Save a key in this browser to review FIB and short answers.';
+    els.removeGeminiKeyBtn.hidden = !key;
+    els.geminiDialog.showModal();
+}
+
+function saveGeminiKey(event) {
+    event.preventDefault();
+    const key = els.geminiApiKey.value.trim();
+    if (!key) {
+        toast('Paste a Gemini API key first');
+        return;
+    }
+    localStorage.setItem(GEMINI_KEY_STORAGE_KEY, key);
+    els.geminiDialog.close();
+    updateAiReviewControls('Gemini key saved. You can review FIB and short answers now.');
+    toast('Gemini key saved');
+}
+
+function removeGeminiKey() {
+    localStorage.removeItem(GEMINI_KEY_STORAGE_KEY);
+    els.geminiApiKey.value = '';
+    els.removeGeminiKeyBtn.hidden = true;
+    els.geminiKeyStatus.textContent = 'No Gemini key is saved in this browser.';
+    updateAiReviewControls();
+    toast('Gemini key removed');
+}
+
+function loadGeminiKey() {
+    return localStorage.getItem(GEMINI_KEY_STORAGE_KEY) || '';
+}
+
+async function reviewActiveQuestionWithGemini() {
+    if (!activeQuestionReview) return;
+    const key = loadGeminiKey();
+    if (!key) {
+        openGeminiDialog();
+        toast('Add your Gemini key first');
+        return;
+    }
+
+    const rows = activeQuestionReview.responses
+        .filter(({ answer }) => isReviewableAnswer(answer))
+        .map(({ submission, answer }) => ({
+            submissionId: submission.id,
+            studentName: submission.studentName || 'Student',
+            admissionNo: submission.admissionNo || '',
+            exactResponse: answerResponseText(answer)
+        }));
+    if (!rows.length) {
+        updateAiReviewControls('No FIB or short-answer responses found for this question.');
+        return;
+    }
+
+    updateAiReviewControls('Reviewing with Gemini...');
+    els.aiReviewBtn.disabled = true;
+    try {
+        const prompt = buildGeminiReviewPrompt(activeQuestionReview.answer, activeQuestionReview.index, rows);
+        const result = await callGeminiReview(key, prompt);
+        const validIds = new Set(rows.map(row => row.submissionId));
+        let savedCount = 0;
+        (result.reviews || []).forEach(review => {
+            if (!validIds.has(review.submissionId)) return;
+            const response = activeQuestionReview.responses.find(item => item.submission.id === review.submissionId);
+            if (!response) return;
+            const marks = normalizeMarks(review.marks);
+            const reason = String(review.reason || '').trim();
+            if (marks === null || !reason) return;
+            aiReviews[reviewKey(response.submission, response.answer, activeQuestionReview.index)] = {
+                marks,
+                reason,
+                source: 'ai',
+                updatedAt: Date.now()
+            };
+            savedCount += 1;
+        });
+        saveAiReviews();
+        renderQuestionResponses();
+        updateAiReviewControls(`Gemini reviewed ${savedCount} response${savedCount === 1 ? '' : 's'}. You can overwrite any score before saving overrides.`);
+    } catch (error) {
+        updateAiReviewControls(error.message || 'Gemini review failed. Check the key and try again.');
+        toast('Gemini review failed');
+    } finally {
+        updateAiReviewControls(els.aiReviewStatus.textContent);
+        els.aiReviewBtn.disabled = activeQuestionReview.responses.filter(({ answer }) => isReviewableAnswer(answer)).length === 0;
+    }
+}
+
+function saveAiReviewOverrides() {
+    if (!activeQuestionReview) return;
+    let savedCount = 0;
+    els.questionResponseList.querySelectorAll('[data-review-key]').forEach(row => {
+        const key = row.dataset.reviewKey;
+        if (!key) return;
+        const marksInput = row.querySelector('.review-marks');
+        const reasonInput = row.querySelector('.review-reason');
+        if (!marksInput || marksInput.disabled) return;
+        const marks = normalizeMarks(marksInput.value);
+        const reason = reasonInput.value.trim();
+        if (marks === null && !reason) return;
+        if (marks === null || !reason) {
+            toast('Each saved review needs marks and a reason');
+            return;
+        }
+        aiReviews[key] = {
+            marks,
+            reason,
+            source: 'teacher',
+            updatedAt: Date.now()
+        };
+        savedCount += 1;
+    });
+    saveAiReviews();
+    renderQuestionResponses();
+    updateAiReviewControls(`Saved ${savedCount} teacher override${savedCount === 1 ? '' : 's'} in this browser.`);
+}
+
+function buildGeminiReviewPrompt(answer, index, rows) {
+    const question = htmlToText(answer.promptHtml || answer.prompt || '').trim();
+    const correctAnswer = answer.correctAnswer || answer.expectedAnswer || '';
+    return [
+        'You are helping a teacher review quiz answers. Return only valid JSON.',
+        'Each question carries 4 marks.',
+        'Award partial marks when the student answer shows partial understanding.',
+        'Do not give marks merely because an answer contains a related word; evaluate the actual meaning.',
+        'For every provided student, provide the marks awarded and a short reason explaining the marks.',
+        "Use the student's exact response when determining marks.",
+        "Do not change, correct, or assume the student's answer.",
+        'If an answer is completely incorrect or irrelevant, award 0.',
+        'If an answer is partially correct, award 1, 2, or 3.',
+        'If an answer is fully correct, award 4.',
+        'Be consistent in applying the same marking standard to all students.',
+        'Do not invent answers, students, marks, or reasons.',
+        'Base every mark and explanation strictly on the student responses and the actual question/answer content.',
+        '',
+        `Question number: ${index + 1}`,
+        `Question type: ${answer.type || 'short answer/FIB'}`,
+        `Question: ${question || 'No prompt text available'}`,
+        `Expected/correct answer: ${correctAnswer || 'Teacher review required'}`,
+        '',
+        'Return JSON in this exact shape:',
+        '{"reviews":[{"submissionId":"string","marks":0,"reason":"short explanation"}]}',
+        '',
+        `Students: ${JSON.stringify(rows)}`
+    ].join('\n');
+}
+
+async function callGeminiReview(apiKey, prompt) {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.1
+            }
+        })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error?.message || 'Gemini request failed');
+    }
+    const text = data.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
+    const parsed = parseJsonResponse(text);
+    if (!Array.isArray(parsed.reviews)) {
+        throw new Error('Gemini did not return a reviews list');
+    }
+    return parsed;
+}
+
+function parseJsonResponse(text) {
+    try {
+        return JSON.parse(text);
+    } catch {
+        const match = String(text || '').match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('Gemini returned invalid JSON');
+        return JSON.parse(match[0]);
+    }
+}
+
+function normalizeMarks(value) {
+    if (value === '' || value === null || value === undefined) return null;
+    const marks = Number(value);
+    if (!Number.isFinite(marks)) return null;
+    return Math.max(0, Math.min(4, Math.round(marks)));
+}
+
+function isReviewableAnswer(answer) {
+    if (!answer) return false;
+    const type = String(answer.type || '').toLowerCase();
+    if (['fib', 'fill', 'blank', 'short'].some(token => type.includes(token))) return true;
+    return answer.shortAnswer !== undefined || Array.isArray(answer.fibAnswers);
+}
+
+function reviewKey(submission, answer, index) {
+    if (!submission?.id) return '';
+    return `${submission.id}::${answer?.questionId || index}`;
+}
+
+function loadAiReviews() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(AI_REVIEW_STORAGE_KEY) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function saveAiReviews() {
+    localStorage.setItem(AI_REVIEW_STORAGE_KEY, JSON.stringify(aiReviews));
 }
 
 async function renderRich(root) {
@@ -944,6 +1271,17 @@ function questionListName(questionBankListId) {
 
 function sectionLabel(section) {
     return section.sectionName || section.name || section.className || section.title || section.id;
+}
+
+function findClassroom(classroomId) {
+    return classrooms.find(c => c.id === classroomId) || sectionClassrooms.find(c => c.id === classroomId);
+}
+
+function canAdminSection(section) {
+    const email = String(currentUser?.email || '').toLowerCase();
+    return (section.members || []).some(member => {
+        return String(member.email || '').toLowerCase() === email && member.role === 'admin';
+    });
 }
 
 function generateClassCode() {

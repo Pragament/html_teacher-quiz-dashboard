@@ -57,6 +57,13 @@ service cloud.firestore {
         || sectionExists(request.resource.data.sectionId);
     }
 
+    function canAdminClassroomSection(classroomData) {
+      return signedIn()
+        && classroomData.sectionId is string
+        && exists(/databases/$(database)/documents/classSections/$(classroomData.sectionId))
+        && canAdminSection(get(/databases/$(database)/documents/classSections/$(classroomData.sectionId)).data);
+    }
+
     match /classSections/{sectionId} {
       allow read: if canViewSection(resource.data);
       allow create: if isSchoolAdmin();
@@ -74,7 +81,8 @@ service cloud.firestore {
     }
 
     match /classrooms/{classroomId} {
-      allow read: if signedIn() && resource.data.creatorId == request.auth.uid;
+      allow read: if signedIn()
+        && (resource.data.creatorId == request.auth.uid || canAdminClassroomSection(resource.data));
       allow create: if signedIn()
         && request.resource.data.creatorId == request.auth.uid
         && hasValidQuestionBankList()

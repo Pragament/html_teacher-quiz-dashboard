@@ -229,6 +229,12 @@ Section roster:
 classSections/{sectionId}/students
 ```
 
+Section admin classroom list:
+
+```txt
+classrooms where sectionId == selectedSectionId
+```
+
 Submission loading for a selected classroom:
 
 ```txt
@@ -244,6 +250,9 @@ The app de-duplicates submissions by document ID and sorts by `submittedAtMillis
 ```txt
 classrooms:
   creatorId ASC
+
+classrooms:
+  sectionId ASC
 
 qb_lists_v1:
   ownerUid ASC

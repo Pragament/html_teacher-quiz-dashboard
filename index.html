@@ -20,6 +20,7 @@
         <div class="topbar-actions">
             <button class="btn primary" id="loginBtn">Google Login</button>
             <button class="btn" id="tourBtn" hidden>Tour</button>
+            <button class="btn" id="geminiKeyBtn" hidden>Gemini Key</button>
             <button class="btn" id="refreshBtn" hidden>Refresh</button>
             <button class="btn" id="logoutBtn" hidden>Logout</button>
         </div>
@@ -61,6 +62,7 @@
                 </div>
                 <div id="sectionList" class="section-list"></div>
                 <div id="studentRoster" class="student-roster"></div>
+                <div id="sectionClassrooms" class="section-classrooms"></div>
             </div>
         </aside>
 
@@ -159,8 +161,47 @@
                 <button class="btn" id="closeQuestionBtn" type="button">Close</button>
             </div>
             <div id="questionPrompt" class="question-prompt"></div>
+            <div class="ai-review-toolbar">
+                <div>
+                    <strong>AI Review</strong>
+                    <p id="aiReviewStatus">Open a FIB or short-answer question to review responses.</p>
+                </div>
+                <div class="ai-review-actions">
+                    <button class="btn primary" id="aiReviewBtn" type="button">Review With Gemini</button>
+                    <button class="btn" id="saveAiReviewOverridesBtn" type="button">Save Overrides</button>
+                </div>
+            </div>
             <div id="questionResponseList" class="question-response-list"></div>
         </div>
+    </dialog>
+
+    <dialog id="geminiDialog" class="modal gemini-modal">
+        <form id="geminiKeyForm" class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2>Gemini API Key</h2>
+                    <p id="geminiKeyStatus">Save a key in this browser to review FIB and short answers.</p>
+                </div>
+                <button class="btn" id="cancelGeminiBtn" type="button">Close</button>
+            </div>
+            <div class="instruction-panel">
+                <strong>Generate a key</strong>
+                <ol>
+                    <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Google AI Studio API keys</a>.</li>
+                    <li>Sign in with your Google account and choose <strong>Create API key</strong>.</li>
+                    <li>Copy the key and paste it below. Prefer a restricted/auth key for the Gemini API.</li>
+                </ol>
+                <p>The key is saved only in this browser's local storage. Do not share it with students.</p>
+            </div>
+            <label class="field">
+                <span>API Key</span>
+                <input id="geminiApiKey" type="password" autocomplete="off" placeholder="Paste Gemini API key" />
+            </label>
+            <div class="form-actions">
+                <button class="btn" id="removeGeminiKeyBtn" type="button">Remove Key</button>
+                <button class="btn primary" type="submit">Save Key</button>
+            </div>
+        </form>
     </dialog>
 
     <dialog id="tourPromptDialog" class="modal tour-prompt-modal">
