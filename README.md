@@ -16,7 +16,7 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 1. Teacher signs in with Google through Firebase Auth.
 2. App queries `classrooms where creatorId == teacher.uid`.
 3. App queries `qb_lists_v1 where ownerUid == teacher.uid` for optional classroom question-list assignment.
-4. Teacher can view sections and open a section roster from `classSections/{sectionId}/students`.
+4. Teacher can view sections they are listed on as `admin` or `viewer`, and open a section roster from `classSections/{sectionId}/students`.
 5. Teacher can create a classroom with name, code, section dropdown, enabled state, and optional question list.
 6. Teacher selects or edits one of their classrooms.
 7. App loads matching `qb_quiz_submissions_v1` records using:
@@ -50,7 +50,7 @@ The app loads Firebase, KaTeX, Mermaid, and Intro.js from CDNs.
 - Enable Google as a Firebase Auth provider.
 - Add the serving domain to Firebase Auth authorized domains.
 - Ensure classroom documents store the teacher UID in `creatorId`.
-- Ensure class section documents exist in `classSections` for the section dropdown.
+- Ensure class section documents include lowercase member emails in `members` with `admin` or `viewer` roles.
 - Ensure private question lists store the teacher UID in `ownerUid`.
 - Ensure quiz submissions include `classroomId` and `sectionId`.
 - Review and adapt `firestore.rules` before production use.

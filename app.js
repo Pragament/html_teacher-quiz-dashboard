@@ -301,8 +301,17 @@ async function loadQuestionBankLists() {
 async function loadClassSections() {
     if (!currentUser) return;
     try {
-        const snap = await getDocs(collection(db, COLLECTIONS.classSections));
-        classSections = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+        const email = String(currentUser.email || '').toLowerCase();
+        const byId = new Map();
+        const sectionQueries = [
+            query(collection(db, COLLECTIONS.classSections), where('members', 'array-contains', { email, role: 'admin' })),
+            query(collection(db, COLLECTIONS.classSections), where('members', 'array-contains', { email, role: 'viewer' }))
+        ];
+        for (const sectionQuery of sectionQueries) {
+            const snap = await getDocs(sectionQuery);
+            snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+        }
+        classSections = Array.from(byId.values()).sort((a, b) => {
             return sectionLabel(a).localeCompare(sectionLabel(b), undefined, { sensitivity: 'base' });
         });
         if (activeSectionId && !classSections.some(section => section.id === activeSectionId)) {
@@ -494,14 +503,12 @@ function ensureClassroomCreatorOpen() {
     if (!els.classroomDialog.open) openClassroomCreator({ modal: false });
 }
 
-function renderSectionOptions(selectedSectionId = '', selectedSectionName = '') {
-    const hasExistingSection = selectedSectionId && !classSections.some(section => section.id === selectedSectionId);
+function renderSectionOptions(selectedSectionId = '') {
     els.editSectionId.innerHTML = `
         <option value="">No section</option>
-        ${hasExistingSection ? `<option value="${esc(selectedSectionId)}">${esc(selectedSectionName || selectedSectionId)}</option>` : ''}
         ${classSections.map(section => `<option value="${esc(section.id)}">${esc(sectionLabel(section))}</option>`).join('')}
     `;
-    els.editSectionId.value = selectedSectionId || '';
+    els.editSectionId.value = classSections.some(section => section.id === selectedSectionId) ? selectedSectionId : '';
 }
 
 function openClassroomEditor(classroomId) {

@@ -11,6 +11,24 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid));
     }
 
+    function hasSectionRole(sectionData, role) {
+      return signedIn()
+        && request.auth.token.email is string
+        && sectionData.members is list
+        && sectionData.members.hasAny([{
+          email: request.auth.token.email.lower(),
+          role: role
+        }]);
+    }
+
+    function canViewSection(sectionData) {
+      return hasSectionRole(sectionData, 'admin') || hasSectionRole(sectionData, 'viewer');
+    }
+
+    function canAdminSection(sectionData) {
+      return hasSectionRole(sectionData, 'admin');
+    }
+
     function ownsClassroom(classroomId) {
       return signedIn()
         && exists(/databases/$(database)/documents/classrooms/$(classroomId))
@@ -25,7 +43,8 @@ service cloud.firestore {
 
     function sectionExists(sectionId) {
       return signedIn()
-        && exists(/databases/$(database)/documents/classSections/$(sectionId));
+        && exists(/databases/$(database)/documents/classSections/$(sectionId))
+        && canViewSection(get(/databases/$(database)/documents/classSections/$(sectionId)).data);
     }
 
     function hasValidQuestionBankList() {
@@ -39,12 +58,18 @@ service cloud.firestore {
     }
 
     match /classSections/{sectionId} {
-      allow read: if signedIn();
-      allow create, update, delete: if isSchoolAdmin();
+      allow read: if canViewSection(resource.data);
+      allow create: if isSchoolAdmin();
+      allow update, delete: if isSchoolAdmin() || canAdminSection(resource.data);
 
       match /students/{studentId} {
-        allow read: if signedIn();
-        allow write: if isSchoolAdmin();
+        allow read: if exists(/databases/$(database)/documents/classSections/$(sectionId))
+          && canViewSection(get(/databases/$(database)/documents/classSections/$(sectionId)).data);
+        allow write: if isSchoolAdmin()
+          || (
+            exists(/databases/$(database)/documents/classSections/$(sectionId))
+            && canAdminSection(get(/databases/$(database)/documents/classSections/$(sectionId)).data)
+          );
       }
     }
 

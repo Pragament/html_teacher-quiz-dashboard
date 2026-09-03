@@ -55,10 +55,11 @@ Path:
 /classSections/{sectionId}
 ```
 
-The classroom editor loads section documents for the create/edit dropdown:
+The classroom editor and section browser load only sections where the signed-in Google email is a member with `admin` or `viewer` access:
 
 ```txt
-classSections
+classSections where members array-contains { email: currentUser.email.toLowerCase(), role: 'admin' }
+classSections where members array-contains { email: currentUser.email.toLowerCase(), role: 'viewer' }
 ```
 
 Supported display fields:
@@ -68,9 +69,28 @@ Supported display fields:
   sectionName: 'DSS grade 8',
   name: 'DSS grade 8',
   className: 'DSS grade 8',
-  title: 'DSS grade 8'
+  title: 'DSS grade 8',
+  sortOrder: 0,
+  enabled: true,
+  members: [
+    {
+      email: 'teacher@example.com',
+      role: 'admin'
+    },
+    {
+      email: 'viewer@example.com',
+      role: 'viewer'
+    }
+  ],
+  createdBy: 'admin@example.com',
+  updatedBy: 'admin@example.com',
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+  createdDate: 1788177950135
 }
 ```
+
+Member emails should be stored lowercase. `admin` and `viewer` members can view the section and its student roster. `admin` members can also manage students if rules allow that app path.
 
 The selected option is saved into classrooms as:
 
@@ -199,7 +219,8 @@ qb_lists_v1 where ownerUid == currentUser.uid
 Section dropdown:
 
 ```txt
-classSections
+classSections where members array-contains { email: currentUser.email.toLowerCase(), role: 'admin' }
+classSections where members array-contains { email: currentUser.email.toLowerCase(), role: 'viewer' }
 ```
 
 Section roster:
