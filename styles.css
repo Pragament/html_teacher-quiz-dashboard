@@ -639,6 +639,10 @@ button {
 .exact-response {
     display: grid;
     gap: 2px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-soft);
+    padding: 8px 10px;
 }
 
 .exact-response span,
@@ -651,8 +655,12 @@ button {
 }
 
 .exact-response p {
+    max-height: 220px;
+    overflow: auto;
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
     color: var(--text);
+    line-height: 1.45;
 }
 
 .ai-review-toolbar {
@@ -668,14 +676,30 @@ button {
 
 .ai-review-actions {
     display: flex;
+    align-items: center;
     gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
 }
 
+.ai-answer-toggle {
+    min-height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    padding: 0 10px;
+}
+
 .ai-response-row {
-    grid-template-columns: minmax(0, 1fr) auto minmax(220px, 0.8fr);
+    grid-template-columns: minmax(260px, 1fr) 116px minmax(220px, 0.75fr);
     align-items: start;
+}
+
+.ai-response-row .answer-pill {
+    justify-content: center;
+    width: 100%;
+    max-width: none;
+    text-align: center;
 }
 
 .ai-score-editor {

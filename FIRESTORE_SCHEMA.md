@@ -181,6 +181,18 @@ Document shape:
       displayAnswer: 'Option A',
       isCorrect: true,
       correctAnswer: 'Option A',
+      aiReview: {
+        marks: 3,
+        maxMarks: 4,
+        reason: 'Shows partial understanding but misses one required point.',
+        source: 'ai',
+        answerSource: 'teacher',
+        questionIndex: 0,
+        questionId: 'question-doc-id',
+        reviewedByUid: 'firebase-auth-uid',
+        reviewedByEmail: 'teacher@example.com',
+        updatedAt: 1788265300000
+      },
       selectedOptions: [0],
       fibAnswers: [],
       trueFalseAnswer: null,
@@ -200,6 +212,7 @@ Important fields:
 - `studentKey` - `${sectionId}_${admissionNo}`.
 - `answers` - contains question snapshots and student answer snapshots for detailed review.
 - `isCorrect` - `true` or `false` for auto-graded items, `null` for short-answer/manual-review items.
+- `answers[].aiReview` - optional Gemini/teacher review marks and reason for FIB or short-answer items. Students can read this later from the submission document.
 - `submittedAtMillis` - used for newest-first client sorting.
 
 ## Query Patterns

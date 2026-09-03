@@ -116,6 +116,7 @@ const els = {
     aiReviewBtn: $('aiReviewBtn'),
     saveAiReviewOverridesBtn: $('saveAiReviewOverridesBtn'),
     aiReviewStatus: $('aiReviewStatus'),
+    useAiAnswerForReview: $('useAiAnswerForReview'),
     geminiDialog: $('geminiDialog'),
     geminiKeyForm: $('geminiKeyForm'),
     geminiApiKey: $('geminiApiKey'),
@@ -803,7 +804,7 @@ function openQuestionDetail(index) {
 
 function updateAiReviewControls(message = '') {
     if (!activeQuestionReview) return;
-    const reviewable = activeQuestionReview.responses.filter(({ answer }) => isReviewableAnswer(answer)).length;
+    const reviewable = reviewableResponsesForActiveQuestion().length;
     const hasKey = !!loadGeminiKey();
     els.aiReviewBtn.disabled = reviewable === 0;
     els.saveAiReviewOverridesBtn.disabled = activeQuestionReview.responses.length === 0;
@@ -821,10 +822,11 @@ function renderQuestionResponses() {
     const { index, responses } = activeQuestionReview;
     els.questionResponseList.innerHTML = responses.map(({ submission, answer: itemAnswer }) => {
         const state = answerState(itemAnswer);
+        const statusLabel = answerStatusLabel(itemAnswer);
         const responseText = answerResponseText(itemAnswer);
         const reviewable = isReviewableAnswer(itemAnswer);
         const key = reviewKey(submission, itemAnswer, index);
-        const review = key ? aiReviews[key] : null;
+        const review = getAiReview(submission, itemAnswer, index);
         return `
             <article class="question-response-row ai-response-row" data-review-key="${esc(key)}">
                 <div class="question-response-main">
@@ -837,7 +839,7 @@ function renderQuestionResponses() {
                         <p>${esc(responseText || 'Not answered')}</p>
                     </div>
                 </div>
-                <span class="answer-pill ${state.className}">${esc(state.label || state.title)}</span>
+                <span class="answer-pill ${state.className}">${esc(statusLabel)}</span>
                 <div class="ai-score-editor">
                     <label class="field compact-field">
                         <span>Marks (0-4)</span>
@@ -866,6 +868,7 @@ function filteredSubmissions() {
         if (result === 'passed' && scorePercent(s) < 50) return false;
         if (result === 'needs_review' && scorePercent(s) >= 50 && manualCount(s) === 0) return false;
         if (result === 'manual' && manualCount(s) === 0) return false;
+        if (result === 'ai_pending' && !hasPendingAiReview(s)) return false;
         return true;
     });
 }
@@ -1041,8 +1044,8 @@ async function reviewActiveQuestionWithGemini() {
         return;
     }
 
-    const rows = activeQuestionReview.responses
-        .filter(({ answer }) => isReviewableAnswer(answer))
+    const reviewableResponses = reviewableResponsesForActiveQuestion();
+    const rows = reviewableResponses
         .map(({ submission, answer }) => ({
             submissionId: submission.id,
             studentName: submission.studentName || 'Student',
@@ -1057,43 +1060,58 @@ async function reviewActiveQuestionWithGemini() {
     updateAiReviewControls('Reviewing with Gemini...');
     els.aiReviewBtn.disabled = true;
     try {
-        const prompt = buildGeminiReviewPrompt(activeQuestionReview.answer, activeQuestionReview.index, rows);
+        const prompt = buildGeminiReviewPrompt(
+            activeQuestionReview.answer,
+            activeQuestionReview.index,
+            rows,
+            els.useAiAnswerForReview.checked
+        );
         const result = await callGeminiReview(key, prompt);
         const validIds = new Set(rows.map(row => row.submissionId));
-        let savedCount = 0;
+        const writes = [];
         (result.reviews || []).forEach(review => {
             if (!validIds.has(review.submissionId)) return;
-            const response = activeQuestionReview.responses.find(item => item.submission.id === review.submissionId);
+            const response = reviewableResponses.find(item => item.submission.id === review.submissionId);
             if (!response) return;
             const marks = normalizeMarks(review.marks);
             const reason = String(review.reason || '').trim();
             if (marks === null || !reason) return;
-            aiReviews[reviewKey(response.submission, response.answer, activeQuestionReview.index)] = {
+            writes.push(persistAiReviewForResponse(response, {
                 marks,
                 reason,
                 source: 'ai',
+                answerSource: els.useAiAnswerForReview.checked ? 'ai' : 'teacher',
+                reviewedByUid: currentUser.uid,
+                reviewedByEmail: currentUser.email || '',
                 updatedAt: Date.now()
-            };
-            savedCount += 1;
+            }));
         });
+        const writeResults = await Promise.all(writes);
+        const savedCount = writeResults.filter(Boolean).length;
         saveAiReviews();
         renderQuestionResponses();
-        updateAiReviewControls(`Gemini reviewed ${savedCount} response${savedCount === 1 ? '' : 's'}. You can overwrite any score before saving overrides.`);
+        renderSelectedClassroom();
+        renderSubmissions();
+        updateAiReviewControls(`Gemini reviewed and saved ${savedCount} response${savedCount === 1 ? '' : 's'} to Firestore. You can overwrite any score.`);
     } catch (error) {
         updateAiReviewControls(error.message || 'Gemini review failed. Check the key and try again.');
         toast('Gemini review failed');
     } finally {
         updateAiReviewControls(els.aiReviewStatus.textContent);
-        els.aiReviewBtn.disabled = activeQuestionReview.responses.filter(({ answer }) => isReviewableAnswer(answer)).length === 0;
+        els.aiReviewBtn.disabled = reviewableResponsesForActiveQuestion().length === 0;
     }
 }
 
-function saveAiReviewOverrides() {
+async function saveAiReviewOverrides() {
     if (!activeQuestionReview) return;
-    let savedCount = 0;
+    const writes = [];
     els.questionResponseList.querySelectorAll('[data-review-key]').forEach(row => {
         const key = row.dataset.reviewKey;
         if (!key) return;
+        const response = activeQuestionReview.responses.find(item => {
+            return reviewKey(item.submission, item.answer, activeQuestionReview.index) === key;
+        });
+        if (!response) return;
         const marksInput = row.querySelector('.review-marks');
         const reasonInput = row.querySelector('.review-reason');
         if (!marksInput || marksInput.disabled) return;
@@ -1104,22 +1122,35 @@ function saveAiReviewOverrides() {
             toast('Each saved review needs marks and a reason');
             return;
         }
-        aiReviews[key] = {
+        writes.push(persistAiReviewForResponse(response, {
             marks,
             reason,
             source: 'teacher',
+            answerSource: els.useAiAnswerForReview.checked ? 'ai' : 'teacher',
+            reviewedByUid: currentUser.uid,
+            reviewedByEmail: currentUser.email || '',
             updatedAt: Date.now()
-        };
-        savedCount += 1;
+        }));
     });
-    saveAiReviews();
-    renderQuestionResponses();
-    updateAiReviewControls(`Saved ${savedCount} teacher override${savedCount === 1 ? '' : 's'} in this browser.`);
+    try {
+        const writeResults = await Promise.all(writes);
+        const savedCount = writeResults.filter(Boolean).length;
+        saveAiReviews();
+        renderQuestionResponses();
+        renderSelectedClassroom();
+        renderSubmissions();
+        updateAiReviewControls(`Saved ${savedCount} teacher override${savedCount === 1 ? '' : 's'} to Firestore.`);
+    } catch (error) {
+        toast(error.message || 'Unable to save AI review');
+    }
 }
 
-function buildGeminiReviewPrompt(answer, index, rows) {
+function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {
     const question = htmlToText(answer.promptHtml || answer.prompt || '').trim();
     const correctAnswer = answer.correctAnswer || answer.expectedAnswer || '';
+    const answerSourceInstruction = useAiAnswer
+        ? 'Reference answer mode: AI answer. First infer the expected answer strictly from the question content, then use that inferred answer as the marking reference.'
+        : 'Reference answer mode: Teacher correct answer. Use only the provided expected/correct answer as the marking reference.';
     return [
         'You are helping a teacher review quiz answers. Return only valid JSON.',
         'Each question carries 4 marks.',
@@ -1134,11 +1165,13 @@ function buildGeminiReviewPrompt(answer, index, rows) {
         'Be consistent in applying the same marking standard to all students.',
         'Do not invent answers, students, marks, or reasons.',
         'Base every mark and explanation strictly on the student responses and the actual question/answer content.',
+        answerSourceInstruction,
+        useAiAnswer ? 'When using AI answer mode, do not add outside facts unless they are necessary to answer the displayed question.' : 'If the teacher correct answer is missing, say that in the reason and mark cautiously from the visible question content.',
         '',
         `Question number: ${index + 1}`,
         `Question type: ${answer.type || 'short answer/FIB'}`,
         `Question: ${question || 'No prompt text available'}`,
-        `Expected/correct answer: ${correctAnswer || 'Teacher review required'}`,
+        `Teacher expected/correct answer: ${correctAnswer || 'Teacher review required'}`,
         '',
         'Return JSON in this exact shape:',
         '{"reviews":[{"submissionId":"string","marks":0,"reason":"short explanation"}]}',
@@ -1195,9 +1228,64 @@ function isReviewableAnswer(answer) {
     return answer.shortAnswer !== undefined || Array.isArray(answer.fibAnswers);
 }
 
+function reviewableResponsesForActiveQuestion() {
+    if (!activeQuestionReview) return [];
+    const pendingOnly = $('resultFilter').value === 'ai_pending';
+    return activeQuestionReview.responses.filter(({ submission, answer }) => {
+        if (!isReviewableAnswer(answer)) return false;
+        if (!pendingOnly) return true;
+        return !hasSavedAiReview(getAiReview(submission, answer, activeQuestionReview.index));
+    });
+}
+
+function hasPendingAiReview(submission) {
+    return (submission.answers || []).some((answer, index) => {
+        return isReviewableAnswer(answer) && !hasSavedAiReview(getAiReview(submission, answer, index));
+    });
+}
+
+function getAiReview(submission, answer, index) {
+    if (answer?.aiReview) return answer.aiReview;
+    const key = reviewKey(submission, answer, index);
+    return key ? aiReviews[key] : null;
+}
+
+function hasSavedAiReview(review) {
+    return review
+        && review.marks !== undefined
+        && review.marks !== null
+        && String(review.reason || '').trim() !== '';
+}
+
 function reviewKey(submission, answer, index) {
     if (!submission?.id) return '';
     return `${submission.id}::${answer?.questionId || index}`;
+}
+
+async function persistAiReviewForResponse(response, reviewData) {
+    const { submission } = response;
+    const index = activeQuestionReview.index;
+    const answers = Array.isArray(submission.answers) ? submission.answers.map(answer => ({ ...answer })) : [];
+    if (!submission.id || !answers[index]) return false;
+    const savedReview = {
+        ...reviewData,
+        questionIndex: index,
+        questionId: answers[index].questionId || '',
+        maxMarks: 4
+    };
+    answers[index] = {
+        ...answers[index],
+        aiReview: savedReview
+    };
+    await updateDoc(doc(db, COLLECTIONS.submissions, submission.id), {
+        answers,
+        aiReviewUpdatedAt: savedReview.updatedAt,
+        aiReviewUpdatedBy: currentUser.uid,
+        aiReviewUpdatedByEmail: currentUser.email || ''
+    });
+    submission.answers = answers;
+    aiReviews[reviewKey(submission, answers[index], index)] = savedReview;
+    return true;
 }
 
 function loadAiReviews() {
@@ -1256,6 +1344,13 @@ function answerState(answer) {
     if (answer.isCorrect === true) return { className: 'correct', label: response || 'Correct', title: response || 'Correct' };
     if (answer.isCorrect === false) return { className: 'wrong', label: response || 'Wrong', title: response || 'Wrong' };
     return { className: 'manual', label: response || 'S', title: response || 'Manual review' };
+}
+
+function answerStatusLabel(answer) {
+    if (!answer) return 'Missing';
+    if (answer.isCorrect === true) return 'Correct';
+    if (answer.isCorrect === false) return 'Incorrect';
+    return 'Manual review';
 }
 
 function formatDate(value) {

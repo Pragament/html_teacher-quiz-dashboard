@@ -64,6 +64,32 @@ service cloud.firestore {
         && canAdminSection(get(/databases/$(database)/documents/classSections/$(classroomData.sectionId)).data);
     }
 
+    function canReviewSubmission(submissionData) {
+      return ownsClassroom(submissionData.classroomId)
+        || (
+          signedIn()
+          && submissionData.sectionId is string
+          && exists(/databases/$(database)/documents/classSections/$(submissionData.sectionId))
+          && canAdminSection(get(/databases/$(database)/documents/classSections/$(submissionData.sectionId)).data)
+        );
+    }
+
+    function isAiReviewUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'answers',
+        'aiReviewUpdatedAt',
+        'aiReviewUpdatedBy',
+        'aiReviewUpdatedByEmail'
+      ])
+      && resource.data.answers is list
+      && request.resource.data.answers is list
+      && request.resource.data.answers.size() == resource.data.answers.size()
+      && request.resource.data.aiReviewUpdatedAt is number
+      && request.resource.data.aiReviewUpdatedBy == request.auth.uid
+      && request.auth.token.email is string
+      && request.resource.data.aiReviewUpdatedByEmail == request.auth.token.email;
+    }
+
     match /classSections/{sectionId} {
       allow read: if canViewSection(resource.data);
       allow create: if isSchoolAdmin();
@@ -108,10 +134,11 @@ service cloud.firestore {
       // Strongest option, if submissions include teacherUid:
       // allow read: if signedIn() && resource.data.teacherUid == request.auth.uid;
 
-      // Works when resource.data.classroomId is the actual classroom document id.
-      allow read: if ownsClassroom(resource.data.classroomId);
+      // Works for classroom owners, and for section admins when submissions include sectionId.
+      allow read: if canReviewSubmission(resource.data);
 
-      allow create, update, delete: if false;
+      allow update: if canReviewSubmission(resource.data) && isAiReviewUpdate();
+      allow create, delete: if false;
     }
   }
 }

@@ -59,7 +59,8 @@ The app loads Firebase, KaTeX, Mermaid, and Intro.js from CDNs.
 ## Notes
 
 - Short-answer items are shown as manual review because student quiz submissions store `isCorrect: null`.
+- FIB and short-answer AI review marks/reasons are saved to `answers[].aiReview` on the submission document.
 - CSV export field selections are saved in browser `localStorage` for the next export.
 - Guided tour refresh prompts can be disabled, and that preference is saved in browser `localStorage`.
-- The dashboard creates and updates owned `classrooms`, reads private `qb_lists_v1`, and reads `qb_quiz_submissions_v1`. It does not modify submissions.
+- The dashboard creates and updates owned `classrooms`, reads private `qb_lists_v1`, reads `qb_quiz_submissions_v1`, and narrowly updates submission AI-review fields.
 - For tighter production security, include `teacherUid` or `creatorId` in every submission at write time so Firestore rules can authorize teacher reads without relying on fallback client queries.
