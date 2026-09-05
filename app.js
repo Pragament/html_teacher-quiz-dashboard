@@ -553,12 +553,12 @@ function editSectionClassroom(classroomId) {
     openClassroomEditor(classroomId);
 }
 
-function openClassroomCreator(options = {}) {
+async function openClassroomCreator(options = {}) {
     const modal = options.modal !== false;
     els.editClassroomTitle.textContent = 'Create Classroom';
     els.editClassroomId.value = '';
     els.editClassroomName.value = '';
-    els.editClassCode.value = generateClassCode();
+    els.editClassCode.value = await generateUniqueClassCode();
     renderSectionOptions();
     els.editClassEnabled.checked = true;
     els.editQuestionBankList.innerHTML = `
@@ -626,6 +626,19 @@ async function saveClassroomEdit(event) {
     }
     if (selectedList) updates.questionBankListId = selectedList.id;
     else updates.questionBankListId = deleteField();
+
+    try {
+        const duplicate = await findClassroomByCode(classCode, classroomId);
+        if (duplicate) {
+            toast(`Class code ${classCode} is already used by ${duplicate.className || duplicate.id}`);
+            els.editClassCode.focus();
+            return;
+        }
+    } catch (error) {
+        toast(error.message || 'Unable to verify class code');
+        els.editClassCode.focus();
+        return;
+    }
 
     if (!classroom) {
         await createClassroom(updates, selectedList, selectedSection);
@@ -1477,6 +1490,30 @@ function canAdminSection(section) {
     return (section.members || []).some(member => {
         return String(member.email || '').toLowerCase() === email && member.role === 'admin';
     });
+}
+
+async function findClassroomByCode(classCode, excludeClassroomId = '') {
+    const code = String(classCode || '').trim();
+    if (!code) return null;
+    const localDuplicate = [...classrooms, ...sectionClassrooms].find(classroom => {
+        return classroom.classCode === code && classroom.id !== excludeClassroomId;
+    });
+    if (localDuplicate) return localDuplicate;
+    const snap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('classCode', '==', code)));
+    const duplicate = snap.docs.find(item => item.id !== excludeClassroomId);
+    return duplicate ? { id: duplicate.id, ...duplicate.data() } : null;
+}
+
+async function generateUniqueClassCode() {
+    try {
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+            const code = generateClassCode();
+            if (!await findClassroomByCode(code)) return code;
+        }
+    } catch {
+        return generateClassCode();
+    }
+    return generateClassCode();
 }
 
 function generateClassCode() {
