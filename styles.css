@@ -688,6 +688,7 @@ button {
     border-radius: 7px;
     background: #fff;
     padding: 0 10px;
+    white-space: nowrap;
 }
 
 .ai-response-row {

@@ -74,6 +74,7 @@ let submissions = [];
 let submissionViewMode = 'table';
 let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
+let aiReviewInFlight = false;
 let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -117,6 +118,8 @@ const els = {
     saveAiReviewOverridesBtn: $('saveAiReviewOverridesBtn'),
     aiReviewStatus: $('aiReviewStatus'),
     useAiAnswerForReview: $('useAiAnswerForReview'),
+    sortQuestionByMarksDesc: $('sortQuestionByMarksDesc'),
+    downloadQuestionPdfBtn: $('downloadQuestionPdfBtn'),
     geminiDialog: $('geminiDialog'),
     geminiKeyForm: $('geminiKeyForm'),
     geminiApiKey: $('geminiApiKey'),
@@ -200,6 +203,8 @@ function bindEvents() {
     els.removeGeminiKeyBtn.addEventListener('click', removeGeminiKey);
     els.aiReviewBtn.addEventListener('click', reviewActiveQuestionWithGemini);
     els.saveAiReviewOverridesBtn.addEventListener('click', saveAiReviewOverrides);
+    els.sortQuestionByMarksDesc.addEventListener('change', renderQuestionResponses);
+    els.downloadQuestionPdfBtn.addEventListener('click', downloadQuestionPdfReport);
     $('skipTourBtn').addEventListener('click', skipTourPrompt);
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
     $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
@@ -749,7 +754,7 @@ function submissionTable(items) {
                     <th scope="col">Student</th>
                     <th scope="col">Roll</th>
                     ${questionHeaders}
-                    <th scope="col">Score</th>
+                    <th scope="col">Total Score</th>
                     <th scope="col">Review</th>
                 </tr>
             </thead>
@@ -761,7 +766,7 @@ function submissionTable(items) {
                         </th>
                         <td>${esc(s.admissionNo || '')}</td>
                         ${Array.from({ length: maxAnswers }, (_, index) => answerCell((s.answers || [])[index])).join('')}
-                        <td>${scorePercent(s)}%</td>
+                        <td>${esc(scoreLabel(s))}</td>
                         <td>${manualCount(s) ? esc(`${manualCount(s)} manual`) : ''}</td>
                     </tr>
                 `).join('')}
@@ -819,8 +824,8 @@ function updateAiReviewControls(message = '') {
 
 function renderQuestionResponses() {
     if (!activeQuestionReview) return;
-    const { index, responses } = activeQuestionReview;
-    els.questionResponseList.innerHTML = responses.map(({ submission, answer: itemAnswer }) => {
+    const { index } = activeQuestionReview;
+    els.questionResponseList.innerHTML = questionResponsesForDisplay().map(({ submission, answer: itemAnswer }) => {
         const state = answerState(itemAnswer);
         const statusLabel = answerStatusLabel(itemAnswer);
         const responseText = answerResponseText(itemAnswer);
@@ -854,6 +859,23 @@ function renderQuestionResponses() {
             </article>
         `;
     }).join('');
+}
+
+function questionResponsesForDisplay() {
+    if (!activeQuestionReview) return [];
+    const { index, responses } = activeQuestionReview;
+    const items = [...responses];
+    if (!els.sortQuestionByMarksDesc.checked) return items;
+    return items.sort((a, b) => {
+        const aMarks = reviewMarksForSort(getAiReview(a.submission, a.answer, index));
+        const bMarks = reviewMarksForSort(getAiReview(b.submission, b.answer, index));
+        if (bMarks !== aMarks) return bMarks - aMarks;
+        return String(a.submission.studentName || '').localeCompare(String(b.submission.studentName || ''), undefined, { sensitivity: 'base' });
+    });
+}
+
+function reviewMarksForSort(review) {
+    return hasSavedAiReview(review) ? Number(review.marks) : -1;
 }
 
 function filteredSubmissions() {
@@ -1037,6 +1059,7 @@ function loadGeminiKey() {
 
 async function reviewActiveQuestionWithGemini() {
     if (!activeQuestionReview) return;
+    if (aiReviewInFlight) return;
     const key = loadGeminiKey();
     if (!key) {
         openGeminiDialog();
@@ -1058,6 +1081,7 @@ async function reviewActiveQuestionWithGemini() {
     }
 
     updateAiReviewControls('Reviewing with Gemini...');
+    aiReviewInFlight = true;
     els.aiReviewBtn.disabled = true;
     try {
         const prompt = buildGeminiReviewPrompt(
@@ -1097,6 +1121,7 @@ async function reviewActiveQuestionWithGemini() {
         updateAiReviewControls(error.message || 'Gemini review failed. Check the key and try again.');
         toast('Gemini review failed');
     } finally {
+        aiReviewInFlight = false;
         updateAiReviewControls(els.aiReviewStatus.textContent);
         els.aiReviewBtn.disabled = reviewableResponsesForActiveQuestion().length === 0;
     }
@@ -1145,38 +1170,87 @@ async function saveAiReviewOverrides() {
     }
 }
 
+function downloadQuestionPdfReport() {
+    if (!activeQuestionReview) return;
+    const jspdf = window.jspdf?.jsPDF;
+    if (!jspdf) {
+        toast('PDF library is still loading');
+        return;
+    }
+    const docPdf = new jspdf({ unit: 'pt', format: 'a4' });
+    const pageWidth = docPdf.internal.pageSize.getWidth();
+    const pageHeight = docPdf.internal.pageSize.getHeight();
+    const margin = 42;
+    const textWidth = pageWidth - margin * 2;
+    let y = margin;
+
+    const addText = (text, options = {}) => {
+        const size = options.size || 10;
+        const style = options.style || 'normal';
+        const gap = options.gap ?? 6;
+        docPdf.setFont('helvetica', style);
+        docPdf.setFontSize(size);
+        const lines = docPdf.splitTextToSize(String(text || ''), textWidth);
+        lines.forEach(line => {
+            if (y > pageHeight - margin) {
+                docPdf.addPage();
+                y = margin;
+            }
+            docPdf.text(line, margin, y);
+            y += size + 4;
+        });
+        y += gap;
+    };
+
+    const classroom = findClassroom(activeClassroomId) || {};
+    const questionText = htmlToText(activeQuestionReview.answer.promptHtml || activeQuestionReview.answer.prompt || '').trim();
+    const correctAnswer = activeQuestionReview.answer.correctAnswer || activeQuestionReview.answer.expectedAnswer || 'Teacher review';
+    const sortedNotice = els.sortQuestionByMarksDesc.checked ? 'Sorted by marks descending' : 'Original visible order';
+
+    addText(`Question ${activeQuestionReview.index + 1} Review Report`, { size: 16, style: 'bold', gap: 10 });
+    addText(`Classroom: ${classroom.className || classroom.classCode || activeClassroomId || ''}`);
+    addText(`Class code: ${classroom.classCode || ''}`);
+    addText(`Generated: ${formatDate(Date.now())}`);
+    addText(`Order: ${sortedNotice}`);
+    addText(`Question: ${questionText || 'No prompt text available'}`, { style: 'bold', gap: 8 });
+    addText(`Teacher correct answer: ${correctAnswer}`);
+
+    questionResponsesForDisplay().forEach(({ submission, answer }, position) => {
+        const review = getAiReview(submission, answer, activeQuestionReview.index);
+        const marks = hasSavedAiReview(review) ? `${formatMarks(review.marks)}/4` : 'Pending';
+        const reason = hasSavedAiReview(review) ? review.reason : 'No review saved';
+        const source = review?.source === 'teacher' ? 'Teacher override' : review?.source === 'ai' ? 'AI generated' : 'Not reviewed';
+        const responseText = answerResponseText(answer) || 'Not answered';
+        addText(`${position + 1}. ${submission.studentName || 'Student'} (${submission.admissionNo || 'No admission'})`, { size: 11, style: 'bold', gap: 3 });
+        addText(`Marks: ${marks} | Source: ${source}`, { gap: 3 });
+        addText(`Exact response: ${responseText}`, { gap: 3 });
+        addText(`Reason: ${reason}`, { gap: 10 });
+    });
+
+    const safeTitle = String(classroom.className || classroom.classCode || 'classroom').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    docPdf.save(`${safeTitle || 'classroom'}-question-${activeQuestionReview.index + 1}-review.pdf`);
+}
+
 function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {
     const question = htmlToText(answer.promptHtml || answer.prompt || '').trim();
     const correctAnswer = answer.correctAnswer || answer.expectedAnswer || '';
     const answerSourceInstruction = useAiAnswer
-        ? 'Reference answer mode: AI answer. First infer the expected answer strictly from the question content, then use that inferred answer as the marking reference.'
-        : 'Reference answer mode: Teacher correct answer. Use only the provided expected/correct answer as the marking reference.';
+        ? 'Use AI answer: infer the expected answer only from the question, then mark against it.'
+        : 'Use teacher answer: mark only against the provided teacher correct answer.';
     return [
-        'You are helping a teacher review quiz answers. Return only valid JSON.',
-        'Each question carries 4 marks.',
-        'Award partial marks when the student answer shows partial understanding.',
-        'Do not give marks merely because an answer contains a related word; evaluate the actual meaning.',
-        'For every provided student, provide the marks awarded and a short reason explaining the marks.',
-        "Use the student's exact response when determining marks.",
-        "Do not change, correct, or assume the student's answer.",
-        'If an answer is completely incorrect or irrelevant, award 0.',
-        'If an answer is partially correct, award 1, 2, or 3.',
-        'If an answer is fully correct, award 4.',
-        'Be consistent in applying the same marking standard to all students.',
+        'Return only compact JSON. One review per supplied student.',
+        'Marks: 0-4. Full=4, partial=1-3, wrong/irrelevant=0.',
+        'Judge meaning, not keyword presence. Use exact student response only; do not correct or assume it.',
+        'Reason must be short and include: why marks were given; correct English sentence formation.',
         'Do not invent answers, students, marks, or reasons.',
-        'Base every mark and explanation strictly on the student responses and the actual question/answer content.',
         answerSourceInstruction,
-        useAiAnswer ? 'When using AI answer mode, do not add outside facts unless they are necessary to answer the displayed question.' : 'If the teacher correct answer is missing, say that in the reason and mark cautiously from the visible question content.',
         '',
-        `Question number: ${index + 1}`,
-        `Question type: ${answer.type || 'short answer/FIB'}`,
-        `Question: ${question || 'No prompt text available'}`,
-        `Teacher expected/correct answer: ${correctAnswer || 'Teacher review required'}`,
+        `Q${index + 1} type: ${answer.type || 'short answer/FIB'}`,
+        `Question: ${question || 'No prompt text'}`,
+        `Teacher answer: ${correctAnswer || 'missing'}`,
         '',
-        'Return JSON in this exact shape:',
-        '{"reviews":[{"submissionId":"string","marks":0,"reason":"short explanation"}]}',
-        '',
-        `Students: ${JSON.stringify(rows)}`
+        `JSON shape: {"reviews":[{"submissionId":"string","marks":0,"reason":"short reason; Correct sentence: ..."}]}`,
+        `Students JSON: ${JSON.stringify(rows)}`
     ].join('\n');
 }
 
@@ -1319,9 +1393,35 @@ async function renderRich(root) {
 }
 
 function scorePercent(submission) {
-    const gradable = Number(submission.gradableCount || 0);
-    if (!gradable) return 0;
-    return Math.round((Number(submission.correctCount || 0) / gradable) * 100);
+    return scoreDetails(submission).percent;
+}
+
+function scoreLabel(submission) {
+    const score = scoreDetails(submission);
+    if (!score.maxMarks) return '0/0 (0%)';
+    return `${formatMarks(score.earnedMarks)}/${formatMarks(score.maxMarks)} (${score.percent}%)`;
+}
+
+function scoreDetails(submission) {
+    const answers = submission.answers || [];
+    const questionCount = Number(submission.questionCount || answers.length || submission.gradableCount || 0);
+    const maxMarks = questionCount * 4;
+    const earnedMarks = answers.reduce((sum, answer, index) => {
+        const review = getAiReview(submission, answer, index);
+        if (hasSavedAiReview(review)) return sum + Number(review.marks || 0);
+        if (answer?.isCorrect === true) return sum + 4;
+        return sum;
+    }, 0);
+    return {
+        earnedMarks,
+        maxMarks,
+        percent: maxMarks ? Math.round((earnedMarks / maxMarks) * 100) : 0
+    };
+}
+
+function formatMarks(value) {
+    const marks = Number(value || 0);
+    return Number.isInteger(marks) ? String(marks) : marks.toFixed(1).replace(/\.0$/, '');
 }
 
 function manualCount(submission) {
