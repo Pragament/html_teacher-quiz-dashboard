@@ -16,7 +16,7 @@
     <header class="topbar" id="topbar" hidden>
         <div>
             <h1>Teacher Quiz Dashboard</h1>
-            <p id="statusText">Sign in to view your classrooms</p>
+            <p id="statusText">Sign in to view your quiz sessions</p>
         </div>
         <div class="topbar-actions">
             <button class="btn primary" id="loginBtn">Google Login</button>
@@ -31,7 +31,7 @@
         <section class="panel login-panel" id="loginView">
             <div class="login-copy">
                 <h1>Teacher Quiz Dashboard</h1>
-                <p>Sign in with the Google account that owns your classrooms.</p>
+                <p>Sign in with the Google account that owns your quiz sessions.</p>
             </div>
             <button class="btn primary wide-btn" id="loginHeroBtn">Google Login</button>
         </section>
@@ -39,7 +39,7 @@
         <aside class="panel classroom-panel" id="classroomPanel" hidden>
             <div class="panel-head">
                 <div>
-                    <h2>Classrooms</h2>
+                    <h2>Quiz Sessions</h2>
                     <p id="teacherLabel"></p>
                 </div>
                 <div class="panel-head-actions">
@@ -49,15 +49,15 @@
             </div>
             <div class="field">
                 <span>Search</span>
-                <input id="classroomSearch" type="search" placeholder="Class name, code, section" />
+                <input id="classroomSearch" type="search" placeholder="Quiz session name, session code, class section" />
             </div>
             <div id="classroomList" class="classroom-list"></div>
 
             <div class="section-browser">
                 <div class="panel-head compact-head">
                     <div>
-                        <h2>Sections</h2>
-                        <p id="sectionSummary">Select a section to view students.</p>
+                        <h2>Class Sections</h2>
+                        <p id="sectionSummary">Select a class section to view students.</p>
                     </div>
                     <span class="count-chip" id="sectionCount">0</span>
                 </div>
@@ -71,7 +71,7 @@
             <section class="panel selected-classroom">
                 <div class="panel-head">
                     <div>
-                        <h2 id="selectedClassroomTitle">Select a classroom</h2>
+                        <h2 id="selectedClassroomTitle">Select a quiz session</h2>
                         <p id="selectedClassroomMeta"></p>
                     </div>
                     <span class="status-chip" id="enabledChip">Status</span>
@@ -100,7 +100,7 @@
                 <div class="panel-head">
                     <div>
                         <h2>Quiz Submissions</h2>
-                        <p id="submissionSummary">Choose a classroom to load submissions.</p>
+                        <p id="submissionSummary">Choose a quiz session to load submissions.</p>
                     </div>
                     <div class="submission-actions">
                         <div class="segmented-control" aria-label="Submission view">
@@ -220,7 +220,7 @@
             <div class="modal-head">
                 <div>
                     <h2>Take The Guided Tour?</h2>
-                    <p>Walk through login, classroom creation, question-list selection, and class-code sharing.</p>
+                    <p>Walk through login, quiz session creation, question-list selection, and session-code sharing.</p>
                 </div>
                 <button class="btn" id="skipTourBtn" type="button">Skip</button>
             </div>
@@ -239,22 +239,22 @@
             <input id="editClassroomId" type="hidden" />
             <div class="modal-head">
                 <div>
-                    <h2 id="editClassroomTitle">Edit Classroom</h2>
-                    <p>Changes are saved to the classroom document.</p>
+                    <h2 id="editClassroomTitle">Edit Quiz Session</h2>
+                    <p>Changes are saved to the quiz session document.</p>
                 </div>
                 <button class="btn" id="cancelClassroomEditBtn" type="button">Cancel</button>
             </div>
             <div class="classroom-edit-grid">
                 <label class="field">
                     <span>Name</span>
-                    <input id="editClassroomName" autocomplete="off" placeholder="Classroom name" />
+                    <input id="editClassroomName" autocomplete="off" placeholder="Quiz session name" />
                 </label>
                 <label class="field">
-                    <span>Code</span>
-                    <input id="editClassCode" autocomplete="off" placeholder="Class code" />
+                    <span>Session Code</span>
+                    <input id="editClassCode" autocomplete="off" placeholder="Session code" />
                 </label>
                 <label class="field">
-                    <span>Section</span>
+                    <span>Class Section</span>
                     <select id="editSectionId"></select>
                 </label>
                 <label class="field">
@@ -267,7 +267,7 @@
                 <span>Enabled</span>
             </label>
             <div class="form-actions">
-                <button class="btn primary" id="saveClassroomBtn" type="submit">Save Classroom</button>
+                <button class="btn primary" id="saveClassroomBtn" type="submit">Save Quiz Session</button>
             </div>
         </form>
     </dialog>

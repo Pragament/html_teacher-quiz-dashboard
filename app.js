@@ -42,9 +42,9 @@ const GEMINI_KEY_STORAGE_KEY = 'teacherQuizDashboard.geminiApiKey.v1';
 const AI_REVIEW_STORAGE_KEY = 'teacherQuizDashboard.aiReviews.v1';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const EXPORT_FIELDS = [
-    { id: 'classroomId', label: 'Classroom ID', header: 'classroomId', value: (s) => s.classroomId || activeClassroomId || '' },
-    { id: 'classCode', label: 'Class Code', header: 'classCode', value: (s, classroom) => classroom.classCode || '' },
-    { id: 'sectionId', label: 'Section ID', header: 'sectionId', value: (s, classroom) => s.sectionId || classroom.sectionId || '' },
+    { id: 'classroomId', label: 'Quiz Session ID', header: 'classroomId', value: (s) => s.classroomId || activeClassroomId || '' },
+    { id: 'classCode', label: 'Session Code', header: 'classCode', value: (s, classroom) => classroom.classCode || '' },
+    { id: 'sectionId', label: 'Class Section ID', header: 'sectionId', value: (s, classroom) => s.sectionId || classroom.sectionId || '' },
     { id: 'studentName', label: 'Student Name', header: 'studentName', value: (s) => s.studentName || '' },
     { id: 'admissionNo', label: 'Admission No', header: 'admissionNo', value: (s) => s.admissionNo || '' },
     { id: 'submittedAt', label: 'Submitted At', header: 'submittedAt', value: (s) => formatDate(s.submittedAtMillis) },
@@ -176,7 +176,7 @@ onAuthStateChanged(auth, async (user) => {
         submissions = [];
         activeClassroomId = null;
         activeSectionId = null;
-        setStatus('Sign in to view your classrooms');
+        setStatus('Sign in to view your quiz sessions');
         render();
         promptGuidedTour();
         return;
@@ -260,11 +260,11 @@ function startLoginTour() {
         steps: [
             {
                 element: els.loginView,
-                intro: 'Welcome to the Teacher Quiz Dashboard. Sign in to create classes, assign question lists, and review student quiz submissions.'
+                intro: 'Welcome to the Teacher Quiz Dashboard. Sign in to create quiz sessions, assign question lists, and review student quiz submissions.'
             },
             {
                 element: els.loginHeroBtn,
-                intro: 'Use Google Login with the teacher account that owns your classrooms.'
+                intro: 'Use Google Login with the teacher account that owns your quiz sessions.'
             }
         ]
     }).start();
@@ -283,27 +283,27 @@ function startTeacherTour() {
         steps: [
             {
                 element: els.createClassroomBtn,
-                intro: 'Start here to create a classroom for a new quiz or student group.'
+                intro: 'Start here to create a quiz session for a new quiz or student group.'
             },
             {
                 element: els.editClassroomName,
-                intro: 'Give the classroom a clear name your teacher dashboard can recognize.'
+                intro: 'Give the quiz session a clear name your teacher dashboard can recognize.'
             },
             {
                 element: els.editQuestionBankList,
-                intro: 'Optionally select one of your private question lists. This controls which saved bank list is attached to the classroom.'
+                intro: 'Optionally select one of your private question lists. This controls which saved bank list is attached to the quiz session.'
             },
             {
                 element: els.editClassCode,
-                intro: 'This class code is what students use to join or submit to the classroom. You can keep the generated code or type your own.'
+                intro: 'This session code is what students use to join or submit to the quiz session. You can keep the generated code or type your own.'
             },
             {
                 element: els.saveClassroomBtn,
-                intro: 'Save the classroom when the name, question list, and code look right.'
+                intro: 'Save the quiz session when the name, question list, and code look right.'
             },
             {
                 element: els.classroomList,
-                intro: 'After saving, share the class code shown on the classroom card with students.'
+                intro: 'After saving, share the session code shown on the quiz session card with students.'
             }
         ]
     });
@@ -387,7 +387,7 @@ async function loadStudentsForSection(sectionId) {
 
 async function loadClassrooms() {
     if (!currentUser) return;
-    setStatus('Loading classrooms...');
+    setStatus('Loading quiz sessions...');
     try {
         const snap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('creatorId', '==', currentUser.uid)));
         classrooms = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
@@ -398,12 +398,12 @@ async function loadClassrooms() {
         if (activeClassroomId) await loadSubmissionsForClassroom(activeClassroomId);
         else {
             submissions = [];
-            setStatus('No classrooms found for this teacher account.');
+            setStatus('No quiz sessions found for this teacher account.');
             render();
         }
     } catch (error) {
-        setStatus(error.message || 'Unable to load classrooms');
-        toast('Unable to load classrooms');
+        setStatus(error.message || 'Unable to load quiz sessions');
+        toast('Unable to load quiz sessions');
     }
 }
 
@@ -463,16 +463,16 @@ function renderClassrooms() {
         <article class="classroom-card ${c.id === activeClassroomId ? 'active' : ''}">
             <button class="classroom-select" data-classroom="${c.id}">
                 <strong>${esc(c.className || c.classCode || c.id)}</strong>
-                <span>${esc(c.sectionName || c.sectionId || 'No section')}</span>
+                <span>${esc(c.sectionName || c.sectionId || 'No class section')}</span>
                 <span class="submission-meta">
-                    <span>Code ${esc(c.classCode || c.id)}</span>
+                    <span>Session code ${esc(c.classCode || c.id)}</span>
                     <span>${c.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
                 </span>
                 <span class="question-list-label">${esc(questionListName(c.questionBankListId))}</span>
             </button>
             <button class="btn classroom-edit-btn" type="button" data-edit-classroom="${c.id}">Edit</button>
         </article>
-    `).join('') : '<div class="empty-card">No matching classrooms.</div>';
+    `).join('') : '<div class="empty-card">No matching quiz sessions.</div>';
     document.querySelectorAll('[data-classroom]').forEach(btn => {
         btn.addEventListener('click', () => loadSubmissionsForClassroom(btn.dataset.classroom));
     });
@@ -488,10 +488,10 @@ function renderSections() {
             <strong>${esc(sectionLabel(section))}</strong>
             <span>${esc(section.id)}</span>
         </button>
-    `).join('') : '<div class="empty-card">No sections found.</div>';
+    `).join('') : '<div class="empty-card">No class sections found.</div>';
     els.sectionSummary.textContent = activeSectionId
         ? `${sectionStudents.length} student${sectionStudents.length === 1 ? '' : 's'} in ${sectionLabel(classSections.find(section => section.id === activeSectionId) || {})}`
-        : 'Select a section to view students.';
+        : 'Select a class section to view students.';
     els.studentRoster.innerHTML = activeSectionId
         ? sectionStudents.length ? `
             <div class="student-table-wrap">
@@ -514,24 +514,24 @@ function renderSections() {
                     </tbody>
                 </table>
             </div>
-        ` : '<div class="empty-card">No students found in this section.</div>'
+        ` : '<div class="empty-card">No students found in this class section.</div>'
         : '';
     els.sectionClassrooms.innerHTML = activeSectionId && canAdminSection(classSections.find(section => section.id === activeSectionId) || {})
         ? `
             <div class="section-subhead">
-                <strong>Classrooms</strong>
+                <strong>Quiz Sessions</strong>
                 <span>${sectionClassrooms.length}</span>
             </div>
             ${sectionClassrooms.length ? sectionClassrooms.map(classroom => `
                 <article class="section-classroom-card">
                     <button class="section-classroom-main" type="button" data-section-classroom="${classroom.id}">
                         <strong>${esc(classroom.className || classroom.classCode || classroom.id)}</strong>
-                        <span>Code ${esc(classroom.classCode || classroom.id)}</span>
+                        <span>Session code ${esc(classroom.classCode || classroom.id)}</span>
                         <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
                     </button>
                     ${classroom.creatorId === currentUser.uid ? `<button class="btn small" type="button" data-edit-classroom="${classroom.id}">Edit</button>` : ''}
                 </article>
-            `).join('') : '<div class="empty-card">No classrooms found in this section.</div>'}
+            `).join('') : '<div class="empty-card">No quiz sessions found in this class section.</div>'}
         `
         : '';
     document.querySelectorAll('[data-section]').forEach(btn => {
@@ -555,7 +555,7 @@ function editSectionClassroom(classroomId) {
 
 async function openClassroomCreator(options = {}) {
     const modal = options.modal !== false;
-    els.editClassroomTitle.textContent = 'Create Classroom';
+    els.editClassroomTitle.textContent = 'Create Quiz Session';
     els.editClassroomId.value = '';
     els.editClassroomName.value = '';
     els.editClassCode.value = await generateUniqueClassCode();
@@ -566,7 +566,7 @@ async function openClassroomCreator(options = {}) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = '';
-    els.saveClassroomBtn.textContent = 'Create Classroom';
+    els.saveClassroomBtn.textContent = 'Create Quiz Session';
     if (modal) els.classroomDialog.showModal();
     else els.classroomDialog.show();
 }
@@ -577,7 +577,7 @@ function ensureClassroomCreatorOpen() {
 
 function renderSectionOptions(selectedSectionId = '') {
     els.editSectionId.innerHTML = `
-        <option value="">No section</option>
+        <option value="">No class section</option>
         ${classSections.map(section => `<option value="${esc(section.id)}">${esc(sectionLabel(section))}</option>`).join('')}
     `;
     els.editSectionId.value = classSections.some(section => section.id === selectedSectionId) ? selectedSectionId : '';
@@ -586,7 +586,7 @@ function renderSectionOptions(selectedSectionId = '') {
 function openClassroomEditor(classroomId) {
     const classroom = findClassroom(classroomId);
     if (!classroom) return;
-    els.editClassroomTitle.textContent = `Edit ${classroom.className || classroom.classCode || classroom.id}`;
+    els.editClassroomTitle.textContent = `Edit Quiz Session: ${classroom.className || classroom.classCode || classroom.id}`;
     els.editClassroomId.value = classroom.id;
     els.editClassroomName.value = classroom.className || '';
     els.editClassCode.value = classroom.classCode || '';
@@ -597,7 +597,7 @@ function openClassroomEditor(classroomId) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = classroom.questionBankListId || '';
-    els.saveClassroomBtn.textContent = 'Save Classroom';
+    els.saveClassroomBtn.textContent = 'Save Quiz Session';
     els.classroomDialog.showModal();
 }
 
@@ -630,12 +630,12 @@ async function saveClassroomEdit(event) {
     try {
         const duplicate = await findClassroomByCode(classCode, classroomId);
         if (duplicate) {
-            toast(`Class code ${classCode} is already used by ${duplicate.className || duplicate.id}`);
+            toast(`Session code ${classCode} is already used by ${duplicate.className || duplicate.id}`);
             els.editClassCode.focus();
             return;
         }
     } catch (error) {
-        toast(error.message || 'Unable to verify class code');
+        toast(error.message || 'Unable to verify session code');
         els.editClassCode.focus();
         return;
     }
@@ -659,9 +659,9 @@ async function saveClassroomEdit(event) {
         if (!selectedList) delete classroom.questionBankListId;
         els.classroomDialog.close();
         render();
-        toast('Classroom updated');
+        toast('Quiz session updated');
     } catch (error) {
-        toast(error.message || 'Unable to update classroom');
+        toast(error.message || 'Unable to update quiz session');
     }
 }
 
@@ -693,19 +693,19 @@ async function createClassroom(formValues, selectedList, selectedSection) {
         submissions = [];
         els.classroomDialog.close();
         render();
-        setStatus('Classroom created');
-        toast('Classroom created');
+        setStatus('Quiz session created');
+        toast('Quiz session created');
     } catch (error) {
-        toast(error.message || 'Unable to create classroom');
+        toast(error.message || 'Unable to create quiz session');
     }
 }
 
 function renderSelectedClassroom() {
     const classroom = findClassroom(activeClassroomId);
     if (!classroom) {
-        els.selectedClassroomTitle.textContent = 'Select a classroom';
+        els.selectedClassroomTitle.textContent = 'Select a quiz session';
         els.selectedClassroomMeta.textContent = '';
-        els.enabledChip.textContent = 'No classroom';
+        els.enabledChip.textContent = 'No quiz session';
         els.enabledChip.className = 'status-chip';
         setStats(0, 0, '-', 0);
         return;
@@ -718,7 +718,7 @@ function renderSelectedClassroom() {
         : '-';
     const manual = submissions.reduce((sum, s) => sum + manualCount(s), 0);
     els.selectedClassroomTitle.textContent = classroom.className || classroom.classCode || classroom.id;
-    els.selectedClassroomMeta.textContent = `Code ${classroom.classCode || classroom.id} · ${classroom.sectionName || classroom.sectionId || 'No section'} · ${questionListName(classroom.questionBankListId)} · ${filtered.length} filtered`;
+    els.selectedClassroomMeta.textContent = `Session code ${classroom.classCode || classroom.id} · ${classroom.sectionName || classroom.sectionId || 'No class section'} · ${questionListName(classroom.questionBankListId)} · ${filtered.length} filtered`;
     els.enabledChip.textContent = classroom.classEnabled === true ? 'Enabled' : 'Disabled';
     els.enabledChip.className = `status-chip ${classroom.classEnabled === true ? 'enabled' : 'disabled'}`;
     setStats(submissions.length, studentCount, average, manual);
@@ -1221,8 +1221,8 @@ function downloadQuestionPdfReport() {
     const sortedNotice = els.sortQuestionByMarksDesc.checked ? 'Sorted by marks descending' : 'Original visible order';
 
     addText(`Question ${activeQuestionReview.index + 1} Review Report`, { size: 16, style: 'bold', gap: 10 });
-    addText(`Classroom: ${classroom.className || classroom.classCode || activeClassroomId || ''}`);
-    addText(`Class code: ${classroom.classCode || ''}`);
+    addText(`Quiz session: ${classroom.className || classroom.classCode || activeClassroomId || ''}`);
+    addText(`Session code: ${classroom.classCode || ''}`);
     addText(`Generated: ${formatDate(Date.now())}`);
     addText(`Order: ${sortedNotice}`);
     addText(`Question: ${questionText || 'No prompt text available'}`, { style: 'bold', gap: 8 });
@@ -1240,8 +1240,8 @@ function downloadQuestionPdfReport() {
         addText(`Reason: ${reason}`, { gap: 10 });
     });
 
-    const safeTitle = String(classroom.className || classroom.classCode || 'classroom').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-    docPdf.save(`${safeTitle || 'classroom'}-question-${activeQuestionReview.index + 1}-review.pdf`);
+    const safeTitle = String(classroom.className || classroom.classCode || 'quiz-session').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    docPdf.save(`${safeTitle || 'quiz-session'}-question-${activeQuestionReview.index + 1}-review.pdf`);
 }
 
 function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {

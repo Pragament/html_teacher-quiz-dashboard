@@ -1,12 +1,12 @@
 # Teacher Quiz Dashboard
 
-Independent responsive app for teachers to sign in with Google, manage classrooms they created, and inspect detailed quiz submissions for students in each classroom.
+Independent responsive app for teachers to sign in with Google, manage quiz sessions they created, and inspect detailed quiz submissions for students in each quiz session.
 
 ## Files
 
-- `index.html` - login, classroom list, submission dashboard, and answer-detail modal.
+- `index.html` - login, quiz session list, submission dashboard, and answer-detail modal.
 - `styles.css` - responsive phone, tablet, and desktop layout.
-- `app.js` - Firebase Auth, classroom and question-list queries, classroom creation/updates, submission queries, detail rendering, and CSV export.
+- `app.js` - Firebase Auth, quiz session and question-list queries, quiz session creation/updates, submission queries, detail rendering, and CSV export.
 - `school-admin/` - independent admin app for class section CRUD and CSV import/export.
 - `FIRESTORE_SCHEMA.md` - schema and query documentation.
 - `firestore.rules` - starter security rules notes for teacher dashboard access.
@@ -15,11 +15,11 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 
 1. Teacher signs in with Google through Firebase Auth.
 2. App queries `classrooms where creatorId == teacher.uid`.
-3. App queries `qb_lists_v1 where ownerUid == teacher.uid` for optional classroom question-list assignment.
+3. App queries `qb_lists_v1 where ownerUid == teacher.uid` for optional quiz session question-list assignment.
 4. Teacher can view sections they are listed on as `admin` or `viewer`, and open a section roster from `classSections/{sectionId}/students`.
-5. Section admins can also see all classrooms attached to that section.
-6. Teacher can create a classroom with name, code, section dropdown, enabled state, and optional question list.
-7. Teacher selects or edits one of their classrooms.
+5. Section admins can also see all quiz sessions attached to that class section.
+6. Teacher can create a quiz session with name, session code, class section dropdown, enabled state, and optional question list.
+7. Teacher selects or edits one of their quiz sessions.
 8. App loads matching `qb_quiz_submissions_v1` records using:
    - `classroomId == classroom.id`
    - `classroomId == classroom.classCode` when different
@@ -28,7 +28,7 @@ Independent responsive app for teachers to sign in with Google, manage classroom
 10. Teacher can filter by student, subject, chapter, and result type.
 11. Teacher can open a detailed submission review with per-question answers, correct answers, score state, and manual-review markers.
 12. Teacher can choose CSV fields, optionally include per-question responses, and export the filtered submission list.
-13. Teachers can use the guided tour to walk through login, classroom creation, question-list selection, and sharing the class code.
+13. Teachers can use the guided tour to walk through login, quiz session creation, question-list selection, and sharing the session code.
 
 ## Run Locally
 
