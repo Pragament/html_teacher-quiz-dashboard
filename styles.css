@@ -917,6 +917,21 @@ button {
     gap: 8px;
 }
 
+.student-difficulty-tools {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(120px, 150px) minmax(110px, 140px);
+    gap: 8px;
+    align-items: end;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px;
+}
+
+.student-difficulty-tools select {
+    width: 100%;
+}
+
 .student-difficulty-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(160px, 210px);
@@ -1129,6 +1144,7 @@ button {
     .section-list,
     .classroom-edit-grid,
     .question-type-grid,
+    .student-difficulty-tools,
     .student-difficulty-row,
     .export-field-list,
     .stats-grid,

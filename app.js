@@ -86,6 +86,8 @@ let aiReviewInFlight = false;
 let difficultySession = null;
 let difficultyStudents = [];
 let difficultySubmissionHistory = [];
+let difficultyDraftLevels = {};
+let difficultySort = { key: 'avg', direction: 'desc', subject: '' };
 let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -1623,10 +1625,12 @@ async function openStudentDifficultyDialog(classroom, selectedSection) {
     difficultySession = classroom;
     difficultyStudents = await getStudentsForDifficulty(selectedSection.id);
     difficultySubmissionHistory = await getSubmissionHistoryForDifficulty(selectedSection.id);
+    difficultyDraftLevels = { ...(classroom.studentDifficultyLevels || {}) };
+    difficultySort = { key: 'avg', direction: 'desc', subject: '' };
     els.studentDifficultySummary.textContent = difficultyStudents.length
         ? `Set optional question difficulty overrides for ${sectionLabel(selectedSection)}. Blank uses the quiz session default.`
         : `No students found in ${sectionLabel(selectedSection)}.`;
-    renderStudentDifficultyList(classroom.studentDifficultyLevels || {});
+    renderStudentDifficultyList();
     els.studentDifficultyDialog.showModal();
 }
 
@@ -1661,11 +1665,38 @@ async function getSubmissionHistoryForDifficulty(sectionId) {
     return Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
 }
 
-function renderStudentDifficultyList(levels = {}) {
-    els.studentDifficultyList.innerHTML = difficultyStudents.length ? difficultyStudents.map(student => {
+function renderStudentDifficultyList() {
+    const subjects = studentDifficultySubjects();
+    const rows = sortedDifficultyStudents();
+    const controls = `
+        <div class="student-difficulty-tools">
+            <label class="field">
+                <span>Subject</span>
+                <select id="difficultySubjectFilter">
+                    <option value="">All subjects</option>
+                    ${subjects.map(subject => `<option value="${esc(subject)}" ${subject === difficultySort.subject ? 'selected' : ''}>${esc(subject)}</option>`).join('')}
+                </select>
+            </label>
+            <label class="field">
+                <span>Sort By</span>
+                <select id="difficultySortKey">
+                    <option value="avg" ${difficultySort.key === 'avg' ? 'selected' : ''}>Avg</option>
+                    <option value="best" ${difficultySort.key === 'best' ? 'selected' : ''}>Best</option>
+                    <option value="last" ${difficultySort.key === 'last' ? 'selected' : ''}>Last</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Order</span>
+                <select id="difficultySortDirection">
+                    <option value="desc" ${difficultySort.direction === 'desc' ? 'selected' : ''}>Desc</option>
+                    <option value="asc" ${difficultySort.direction === 'asc' ? 'selected' : ''}>Asc</option>
+                </select>
+            </label>
+        </div>
+    `;
+    const list = rows.length ? rows.map(({ student, history }) => {
         const admissionNo = String(student.admissionNo || student.id);
-        const selected = String(levels[admissionNo] || '');
-        const history = studentDifficultyHistory(student);
+        const selected = String(difficultyDraftLevels[admissionNo] || '');
         return `
             <div class="student-difficulty-row">
                 <div class="student-difficulty-main">
@@ -1682,19 +1713,87 @@ function renderStudentDifficultyList(levels = {}) {
                 </label>
             </div>
         `;
-    }).join('') : '<div class="empty-card">No students available for difficulty overrides.</div>';
+    }).join('') : '<div class="empty-card">No students match this subject filter.</div>';
+    els.studentDifficultyList.innerHTML = difficultyStudents.length
+        ? `${controls}${list}`
+        : '<div class="empty-card">No students available for difficulty overrides.</div>';
+    bindStudentDifficultyListEvents();
 }
 
 function studentDifficultyHistory(student) {
+    return studentDifficultyHistoryForSubject(student, difficultySort.subject);
+}
+
+function studentDifficultyHistoryForSubject(student, subject = '') {
     const admissionNo = String(student.admissionNo || student.id || '').trim();
     const studentId = String(student.id || '').trim();
     return difficultySubmissionHistory.filter(submission => {
         const submissionAdmission = String(submission.admissionNo || '').trim();
         const submissionKey = String(submission.studentKey || '').trim();
-        return submissionAdmission === admissionNo
+        const studentMatches = submissionAdmission === admissionNo
             || (studentId && submissionKey === studentId)
             || (studentId && submissionKey.endsWith(`_${studentId}`))
             || (admissionNo && submissionKey.endsWith(`_${admissionNo}`));
+        return studentMatches && (!subject || submission.subject === subject);
+    });
+}
+
+function sortedDifficultyStudents() {
+    return difficultyStudents
+        .map(student => ({ student, history: studentDifficultyHistory(student) }))
+        .filter(item => !difficultySort.subject || item.history.length)
+        .sort((a, b) => {
+            const diff = difficultyHistoryMetric(a.history, difficultySort.key) - difficultyHistoryMetric(b.history, difficultySort.key);
+            if (diff) return difficultySort.direction === 'asc' ? diff : -diff;
+            return compareText(a.student.name || '', b.student.name || '')
+                || compareText(a.student.admissionNo || a.student.id, b.student.admissionNo || b.student.id);
+        });
+}
+
+function difficultyHistoryMetric(history, key) {
+    const metrics = studentHistoryMetrics(history);
+    if (key === 'best') return metrics.best;
+    if (key === 'last') return metrics.lastPercent;
+    return metrics.average;
+}
+
+function studentHistoryMetrics(history) {
+    if (!history.length) return { average: 0, best: 0, lastPercent: 0 };
+    const scored = history.filter(submission => scoreDetails(submission).maxMarks > 0);
+    const average = scored.length
+        ? Math.round(scored.reduce((sum, submission) => sum + scoreDetails(submission).percent, 0) / scored.length)
+        : 0;
+    const best = scored.length ? Math.max(...scored.map(submission => scoreDetails(submission).percent)) : 0;
+    return {
+        average,
+        best,
+        lastPercent: scoreDetails(history[0]).percent
+    };
+}
+
+function studentDifficultySubjects() {
+    return Array.from(new Set(difficultySubmissionHistory.map(submission => submission.subject).filter(Boolean)))
+        .sort((a, b) => compareText(a, b));
+}
+
+function bindStudentDifficultyListEvents() {
+    $('difficultySubjectFilter')?.addEventListener('change', event => {
+        difficultySort.subject = event.target.value;
+        renderStudentDifficultyList();
+    });
+    $('difficultySortKey')?.addEventListener('change', event => {
+        difficultySort.key = event.target.value;
+        renderStudentDifficultyList();
+    });
+    $('difficultySortDirection')?.addEventListener('change', event => {
+        difficultySort.direction = event.target.value;
+        renderStudentDifficultyList();
+    });
+    els.studentDifficultyList.querySelectorAll('[data-student-difficulty]').forEach(select => {
+        select.addEventListener('change', event => {
+            if (event.target.value) difficultyDraftLevels[event.target.dataset.studentDifficulty] = event.target.value;
+            else delete difficultyDraftLevels[event.target.dataset.studentDifficulty];
+        });
     });
 }
 
@@ -1702,20 +1801,16 @@ function studentHistoryHtml(history) {
     if (!history.length) {
         return '<div class="student-history empty">No past submissions found for this class section.</div>';
     }
-    const scored = history.filter(submission => scoreDetails(submission).maxMarks > 0);
-    const average = scored.length
-        ? Math.round(scored.reduce((sum, submission) => sum + scoreDetails(submission).percent, 0) / scored.length)
-        : 0;
+    const metrics = studentHistoryMetrics(history);
     const last = history[0];
     const lastScore = scoreLabel(last);
-    const best = scored.length ? Math.max(...scored.map(submission => scoreDetails(submission).percent)) : 0;
     const pendingManual = history.reduce((sum, submission) => sum + manualCount(submission), 0);
     const typeSummary = studentAnswerTypeSummary(history);
     return `
         <div class="student-history">
             <span>${history.length} attempt${history.length === 1 ? '' : 's'}</span>
-            <span>Avg ${average}%</span>
-            <span>Best ${best}%</span>
+            <span>Avg ${metrics.average}%</span>
+            <span>Best ${metrics.best}%</span>
             <span>Last ${esc(lastScore)}</span>
             ${pendingManual ? `<span>${pendingManual} pending review</span>` : ''}
             ${typeSummary ? `<span>${esc(typeSummary)}</span>` : ''}
@@ -1754,9 +1849,10 @@ function questionTypeLabel(type) {
 async function saveStudentDifficulty(event) {
     event.preventDefault();
     if (!difficultySession?.id) return;
-    const levels = {};
+    const levels = { ...difficultyDraftLevels };
     els.studentDifficultyList.querySelectorAll('[data-student-difficulty]').forEach(select => {
         if (select.value) levels[select.dataset.studentDifficulty] = select.value;
+        else delete levels[select.dataset.studentDifficulty];
     });
     const updates = {
         studentDifficultyLevels: Object.keys(levels).length ? levels : deleteField(),
