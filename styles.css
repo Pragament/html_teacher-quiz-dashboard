@@ -551,6 +551,29 @@ button {
     opacity: 0.85;
 }
 
+.sort-head-btn {
+    width: 100%;
+    min-height: 26px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.sort-head-btn span {
+    display: block;
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.sort-head-btn.active span {
+    color: #fff;
+}
+
 .submission-table tbody th {
     width: 150px;
     background: #fff;

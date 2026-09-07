@@ -72,6 +72,7 @@ let activeClassroomId = null;
 let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'table';
+let submissionSort = { key: 'score', direction: 'desc' };
 let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
 let aiReviewInFlight = false;
@@ -733,18 +734,22 @@ function setStats(submissionCount, studentCount, average, manual) {
 
 function renderSubmissions() {
     const filtered = filteredSubmissions();
+    const sorted = sortedSubmissions(filtered);
     els.submissionSummary.textContent = `${filtered.length} visible of ${submissions.length} loaded submissions`;
     els.tableViewBtn.classList.toggle('active', submissionViewMode === 'table');
     els.cardViewBtn.classList.toggle('active', submissionViewMode === 'cards');
     els.submissionList.className = submissionViewMode === 'table' ? 'submission-table-wrap' : 'submission-list';
-    els.submissionList.innerHTML = filtered.length
-        ? submissionViewMode === 'table' ? submissionTable(filtered) : filtered.map(submissionCard).join('')
+    els.submissionList.innerHTML = sorted.length
+        ? submissionViewMode === 'table' ? submissionTable(sorted) : sorted.map(submissionCard).join('')
         : '<div class="empty-card">No submissions match these filters.</div>';
     document.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', () => openSubmissionDetail(btn.dataset.detail));
     });
     document.querySelectorAll('[data-question-index]').forEach(btn => {
         btn.addEventListener('click', () => openQuestionDetail(Number(btn.dataset.questionIndex)));
+    });
+    document.querySelectorAll('[data-submission-sort]').forEach(btn => {
+        btn.addEventListener('click', () => setSubmissionSort(btn.dataset.submissionSort));
     });
 }
 
@@ -764,11 +769,11 @@ function submissionTable(items) {
         <table class="submission-table">
             <thead>
                 <tr>
-                    <th scope="col">Student</th>
-                    <th scope="col">Roll</th>
+                    <th scope="col">${sortHeader('Student', 'student')}</th>
+                    <th scope="col">${sortHeader('Roll', 'roll')}</th>
                     ${questionHeaders}
-                    <th scope="col">Total Score</th>
-                    <th scope="col">Review</th>
+                    <th scope="col">${sortHeader('Total Score', 'score')}</th>
+                    <th scope="col">${sortHeader('Review', 'review')}</th>
                 </tr>
             </thead>
             <tbody>
@@ -788,13 +793,51 @@ function submissionTable(items) {
     `;
 }
 
+function sortHeader(label, key) {
+    const active = submissionSort.key === key;
+    const direction = active ? submissionSort.direction === 'asc' ? 'ASC' : 'DESC' : 'SORT';
+    return `<button class="sort-head-btn ${active ? 'active' : ''}" type="button" data-submission-sort="${key}">${esc(label)} <span>${direction}</span></button>`;
+}
+
+function setSubmissionSort(key) {
+    if (submissionSort.key === key) {
+        submissionSort = { key, direction: submissionSort.direction === 'asc' ? 'desc' : 'asc' };
+    } else {
+        submissionSort = { key, direction: key === 'score' || key === 'review' ? 'desc' : 'asc' };
+    }
+    renderSubmissions();
+}
+
+function sortedSubmissions(items) {
+    return [...items].sort((a, b) => {
+        const result = compareSubmissions(a, b, submissionSort.key);
+        return submissionSort.direction === 'asc' ? result : -result;
+    });
+}
+
+function compareSubmissions(a, b, key) {
+    if (key === 'student') return compareText(a.studentName || 'Student', b.studentName || 'Student');
+    if (key === 'roll') return compareText(a.admissionNo || '', b.admissionNo || '');
+    if (key === 'review') return manualCount(a) - manualCount(b);
+    if (key === 'score') {
+        const scoreDiff = scoreDetails(a).earnedMarks - scoreDetails(b).earnedMarks;
+        if (scoreDiff) return scoreDiff;
+        return scoreDetails(a).percent - scoreDetails(b).percent;
+    }
+    return (a.submittedAtMillis || 0) - (b.submittedAtMillis || 0);
+}
+
+function compareText(a, b) {
+    return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function answerCell(answer) {
     const state = answerState(answer);
     return `<td class="answer-cell ${state.className}" title="${esc(state.title)}">${esc(state.label)}</td>`;
 }
 
 function openQuestionDetail(index) {
-    const visible = filteredSubmissions();
+    const visible = sortedSubmissions(filteredSubmissions());
     const answer = visible.map(s => (s.answers || [])[index]).find(Boolean);
     if (!answer) return;
     const responses = visible.map(s => ({ submission: s, answer: (s.answers || [])[index] }));
