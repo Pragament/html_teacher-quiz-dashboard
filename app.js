@@ -47,6 +47,7 @@ const QUESTION_TYPE_PICK_FIELDS = [
     { key: 'short_answer', inputId: 'pickShortAnswerCount' },
     { key: 'true_false', inputId: 'pickTrueFalseCount' }
 ];
+const DIFFICULTY_LEVELS = ['Easy', 'Medium', 'Hard', 'Very Hard'];
 const EXPORT_FIELDS = [
     { id: 'classroomId', label: 'Quiz Session ID', header: 'classroomId', value: (s) => s.classroomId || activeClassroomId || '' },
     { id: 'classCode', label: 'Session Code', header: 'classCode', value: (s, classroom) => classroom.classCode || '' },
@@ -82,6 +83,9 @@ let submissionSort = { key: 'score', direction: 'desc' };
 let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
 let aiReviewInFlight = false;
+let difficultySession = null;
+let difficultyStudents = [];
+let difficultySubmissionHistory = [];
 let toastTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -151,6 +155,10 @@ const els = {
     pickShortAnswerCount: $('pickShortAnswerCount'),
     pickTrueFalseCount: $('pickTrueFalseCount'),
     saveClassroomBtn: $('saveClassroomBtn'),
+    studentDifficultyDialog: $('studentDifficultyDialog'),
+    studentDifficultyForm: $('studentDifficultyForm'),
+    studentDifficultySummary: $('studentDifficultySummary'),
+    studentDifficultyList: $('studentDifficultyList'),
     exportDialog: $('exportDialog'),
     exportForm: $('exportForm'),
     exportFieldList: $('exportFieldList'),
@@ -218,8 +226,10 @@ function bindEvents() {
     els.downloadQuestionPdfBtn.addEventListener('click', downloadQuestionPdfReport);
     $('skipTourBtn').addEventListener('click', skipTourPrompt);
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
+    $('skipStudentDifficultyBtn').addEventListener('click', () => els.studentDifficultyDialog.close());
     $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
     els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
+    els.studentDifficultyForm.addEventListener('submit', saveStudentDifficulty);
     els.tourPromptForm.addEventListener('submit', startPromptedTour);
     els.exportForm.addEventListener('submit', exportSubmissionsCsv);
     $('exportCsvBtn').addEventListener('click', openExportDialog);
@@ -481,6 +491,7 @@ function renderClassrooms() {
                 </span>
                 <span class="question-list-label">${esc(questionListName(c.questionBankListId))}</span>
                 ${questionTypePickLabel(c.randomQuestionTypeCounts) ? `<span class="question-list-label">${esc(questionTypePickLabel(c.randomQuestionTypeCounts))}</span>` : ''}
+                ${studentDifficultyLabel(c.studentDifficultyLevels) ? `<span class="question-list-label">${esc(studentDifficultyLabel(c.studentDifficultyLevels))}</span>` : ''}
             </button>
             <button class="btn classroom-edit-btn" type="button" data-edit-classroom="${c.id}">Edit</button>
         </article>
@@ -637,6 +648,8 @@ async function saveClassroomEdit(event) {
     } else {
         updates.sectionId = deleteField();
         updates.sectionName = deleteField();
+        updates.studentDifficultyLevels = deleteField();
+        updates.studentDifficultyUpdatedAt = deleteField();
     }
     if (selectedList) updates.questionBankListId = selectedList.id;
     else updates.questionBankListId = deleteField();
@@ -652,13 +665,25 @@ async function saveClassroomEdit(event) {
             return;
         }
     } catch (error) {
-        toast(error.message || 'Unable to verify session code');
+        reportError('Unable to verify session code', error);
         els.editClassCode.focus();
         return;
     }
 
     if (!classroom) {
-        await createClassroom(updates, selectedList, selectedSection);
+        const createValues = {
+            className,
+            classCode,
+            classEnabled: els.editClassEnabled.checked
+        };
+        if (selectedSection) {
+            createValues.sectionId = selectedSection.id;
+            createValues.sectionName = sectionLabel(selectedSection);
+        }
+        if (selectedList) createValues.questionBankListId = selectedList.id;
+        if (randomQuestionTypeCounts) createValues.randomQuestionTypeCounts = randomQuestionTypeCounts;
+        const createdClassroom = await createClassroom(createValues, selectedList, selectedSection);
+        if (createdClassroom) await maybeOpenStudentDifficultyDialog(createdClassroom, selectedSection);
         return;
     }
 
@@ -672,6 +697,7 @@ async function saveClassroomEdit(event) {
         if (!selectedSection) {
             delete classroom.sectionId;
             delete classroom.sectionName;
+            delete classroom.studentDifficultyLevels;
         }
         if (!selectedList) delete classroom.questionBankListId;
         if (randomQuestionTypeCounts) classroom.randomQuestionTypeCounts = randomQuestionTypeCounts;
@@ -680,8 +706,10 @@ async function saveClassroomEdit(event) {
         render();
         toast('Quiz session updated');
     } catch (error) {
-        toast(error.message || 'Unable to update quiz session');
+        reportError('Unable to update quiz session', error);
+        return;
     }
+    await maybeOpenStudentDifficultyDialog(classroom, selectedSection);
 }
 
 async function createClassroom(formValues, selectedList, selectedSection) {
@@ -714,9 +742,11 @@ async function createClassroom(formValues, selectedList, selectedSection) {
         render();
         setStatus('Quiz session created');
         toast('Quiz session created');
+        return newClassroom;
     } catch (error) {
-        toast(error.message || 'Unable to create quiz session');
+        reportError('Unable to create quiz session', error);
     }
+    return null;
 }
 
 function renderSelectedClassroom() {
@@ -1583,6 +1613,171 @@ function questionTypePickLabel(counts = {}) {
     return parts.length ? `Random pick: ${parts.join(', ')}` : '';
 }
 
+function studentDifficultyLabel(levels = {}) {
+    const count = Object.values(levels || {}).filter(Boolean).length;
+    return count ? `${count} student difficulty override${count === 1 ? '' : 's'}` : '';
+}
+
+async function openStudentDifficultyDialog(classroom, selectedSection) {
+    if (!classroom?.id || !selectedSection?.id) return;
+    difficultySession = classroom;
+    difficultyStudents = await getStudentsForDifficulty(selectedSection.id);
+    difficultySubmissionHistory = await getSubmissionHistoryForDifficulty(selectedSection.id);
+    els.studentDifficultySummary.textContent = difficultyStudents.length
+        ? `Set optional question difficulty overrides for ${sectionLabel(selectedSection)}. Blank uses the quiz session default.`
+        : `No students found in ${sectionLabel(selectedSection)}.`;
+    renderStudentDifficultyList(classroom.studentDifficultyLevels || {});
+    els.studentDifficultyDialog.showModal();
+}
+
+async function maybeOpenStudentDifficultyDialog(classroom, selectedSection) {
+    if (!selectedSection?.id) return;
+    try {
+        await openStudentDifficultyDialog(classroom, selectedSection);
+    } catch (error) {
+        reportError('Quiz session saved, but students could not be loaded', error);
+    }
+}
+
+async function getStudentsForDifficulty(sectionId) {
+    if (activeSectionId === sectionId && sectionStudents.length) return sectionStudents;
+    const snap = await getDocs(collection(db, COLLECTIONS.classSections, sectionId, 'students'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+        return String(a.admissionNo || a.id).localeCompare(String(b.admissionNo || b.id), undefined, { numeric: true });
+    });
+}
+
+async function getSubmissionHistoryForDifficulty(sectionId) {
+    const byId = new Map();
+    submissions
+        .filter(submission => submission.sectionId === sectionId)
+        .forEach(submission => byId.set(submission.id, submission));
+    try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.submissions), where('sectionId', '==', sectionId)));
+        snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+    } catch (error) {
+        console.error('Unable to load past section submissions for difficulty picker', error);
+    }
+    return Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
+}
+
+function renderStudentDifficultyList(levels = {}) {
+    els.studentDifficultyList.innerHTML = difficultyStudents.length ? difficultyStudents.map(student => {
+        const admissionNo = String(student.admissionNo || student.id);
+        const selected = String(levels[admissionNo] || '');
+        const history = studentDifficultyHistory(student);
+        return `
+            <div class="student-difficulty-row">
+                <div class="student-difficulty-main">
+                    <strong>${esc(student.name || 'Student')}</strong>
+                    <small>${esc(admissionNo)}</small>
+                    ${studentHistoryHtml(history)}
+                </div>
+                <label class="student-difficulty-control">
+                    <span>Difficulty</span>
+                    <select data-student-difficulty="${esc(admissionNo)}">
+                        <option value="">Session default</option>
+                        ${DIFFICULTY_LEVELS.map(level => `<option value="${esc(level)}" ${level === selected ? 'selected' : ''}>${esc(level)}</option>`).join('')}
+                    </select>
+                </label>
+            </div>
+        `;
+    }).join('') : '<div class="empty-card">No students available for difficulty overrides.</div>';
+}
+
+function studentDifficultyHistory(student) {
+    const admissionNo = String(student.admissionNo || student.id || '').trim();
+    const studentId = String(student.id || '').trim();
+    return difficultySubmissionHistory.filter(submission => {
+        const submissionAdmission = String(submission.admissionNo || '').trim();
+        const submissionKey = String(submission.studentKey || '').trim();
+        return submissionAdmission === admissionNo
+            || (studentId && submissionKey === studentId)
+            || (studentId && submissionKey.endsWith(`_${studentId}`))
+            || (admissionNo && submissionKey.endsWith(`_${admissionNo}`));
+    });
+}
+
+function studentHistoryHtml(history) {
+    if (!history.length) {
+        return '<div class="student-history empty">No past submissions found for this class section.</div>';
+    }
+    const scored = history.filter(submission => scoreDetails(submission).maxMarks > 0);
+    const average = scored.length
+        ? Math.round(scored.reduce((sum, submission) => sum + scoreDetails(submission).percent, 0) / scored.length)
+        : 0;
+    const last = history[0];
+    const lastScore = scoreLabel(last);
+    const best = scored.length ? Math.max(...scored.map(submission => scoreDetails(submission).percent)) : 0;
+    const pendingManual = history.reduce((sum, submission) => sum + manualCount(submission), 0);
+    const typeSummary = studentAnswerTypeSummary(history);
+    return `
+        <div class="student-history">
+            <span>${history.length} attempt${history.length === 1 ? '' : 's'}</span>
+            <span>Avg ${average}%</span>
+            <span>Best ${best}%</span>
+            <span>Last ${esc(lastScore)}</span>
+            ${pendingManual ? `<span>${pendingManual} pending review</span>` : ''}
+            ${typeSummary ? `<span>${esc(typeSummary)}</span>` : ''}
+            <small>Last submitted ${esc(formatDate(last.submittedAtMillis) || 'date unavailable')}</small>
+        </div>
+    `;
+}
+
+function studentAnswerTypeSummary(history) {
+    const totals = {};
+    history.forEach(submission => {
+        (submission.answers || []).forEach(answer => {
+            const type = answer?.type || 'question';
+            totals[type] = totals[type] || { total: 0, missed: 0 };
+            totals[type].total += 1;
+            if (answer?.isCorrect !== true) totals[type].missed += 1;
+        });
+    });
+    const weakest = Object.entries(totals)
+        .filter(([, item]) => item.total > 0)
+        .sort((a, b) => (b[1].missed / b[1].total) - (a[1].missed / a[1].total))[0];
+    if (!weakest || !weakest[1].missed) return '';
+    return `Needs practice: ${questionTypeLabel(weakest[0])}`;
+}
+
+function questionTypeLabel(type) {
+    const labels = {
+        mcq: 'MCQ',
+        fib: 'FIB',
+        short_answer: 'Short answer',
+        true_false: 'True/False'
+    };
+    return labels[type] || type;
+}
+
+async function saveStudentDifficulty(event) {
+    event.preventDefault();
+    if (!difficultySession?.id) return;
+    const levels = {};
+    els.studentDifficultyList.querySelectorAll('[data-student-difficulty]').forEach(select => {
+        if (select.value) levels[select.dataset.studentDifficulty] = select.value;
+    });
+    const updates = {
+        studentDifficultyLevels: Object.keys(levels).length ? levels : deleteField(),
+        studentDifficultyUpdatedAt: serverTimestamp()
+    };
+    try {
+        await updateDoc(doc(db, COLLECTIONS.classrooms, difficultySession.id), updates);
+        difficultySession.studentDifficultyLevels = Object.keys(levels).length ? levels : undefined;
+        const local = findClassroom(difficultySession.id);
+        if (local) {
+            if (Object.keys(levels).length) local.studentDifficultyLevels = levels;
+            else delete local.studentDifficultyLevels;
+        }
+        els.studentDifficultyDialog.close();
+        renderClassrooms();
+        toast('Student difficulty saved');
+    } catch (error) {
+        reportError('Unable to save student difficulty', error);
+    }
+}
+
 async function findClassroomByCode(classCode, excludeClassroomId = '') {
     const code = String(classCode || '').trim();
     if (!code) return null;
@@ -1658,9 +1853,18 @@ function setStatus(message) {
     els.statusText.textContent = message;
 }
 
-function toast(message) {
+function reportError(context, error) {
+    console.error(context, error);
+    toast(error?.message || context, { type: 'error', duration: 9000 });
+}
+
+function toast(message, options = {}) {
     els.toast.textContent = message;
+    els.toast.classList.toggle('error', options.type === 'error');
     els.toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => els.toast.classList.remove('show'), 2200);
+    toastTimer = setTimeout(() => {
+        els.toast.classList.remove('show');
+        els.toast.classList.remove('error');
+    }, options.duration || 2200);
 }

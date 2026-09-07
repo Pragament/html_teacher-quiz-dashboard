@@ -863,6 +863,10 @@ button {
     width: min(720px, calc(100vw - 24px));
 }
 
+.difficulty-modal {
+    width: min(760px, calc(100vw - 24px));
+}
+
 .modal-card {
     display: grid;
     gap: 14px;
@@ -906,6 +910,79 @@ button {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
+}
+
+.student-difficulty-list {
+    display: grid;
+    gap: 8px;
+}
+
+.student-difficulty-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 210px);
+    gap: 14px;
+    align-items: start;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 10px;
+}
+
+.student-difficulty-main,
+.student-difficulty-control {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.student-difficulty-main small,
+.student-difficulty-control span {
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.student-difficulty-control span {
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.student-difficulty-row select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--text);
+    padding: 8px 10px;
+}
+
+.student-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+}
+
+.student-history span,
+.student-history small {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+    padding: 4px 7px;
+}
+
+.student-history small {
+    color: var(--muted);
+}
+
+.student-history.empty {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .export-field-list {
@@ -989,6 +1066,10 @@ button {
     transform: translateY(0);
 }
 
+.toast.error {
+    background: #991b1b;
+}
+
 @media (max-width: 980px) {
     .app-shell {
         grid-template-columns: 1fr;
@@ -1048,6 +1129,7 @@ button {
     .section-list,
     .classroom-edit-grid,
     .question-type-grid,
+    .student-difficulty-row,
     .export-field-list,
     .stats-grid,
     .filters-grid {

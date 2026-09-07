@@ -40,6 +40,11 @@ Document shape:
     short_answer: 3,
     true_false: 2
   },
+  studentDifficultyLevels: {
+    '102': 'Easy',
+    '103': 'Hard'
+  },
+  studentDifficultyUpdatedAt: Timestamp,
   updatedAt: Timestamp
 }
 ```
@@ -53,6 +58,7 @@ Important fields:
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
 - `randomQuestionTypeCounts` - optional per-type limits for randomly picking questions from the selected question list. Missing or empty means use all questions.
+- `studentDifficultyLevels` - optional admission-number keyed difficulty overrides. Missing student entries use the quiz session default question selection.
 
 ### `classSections`
 

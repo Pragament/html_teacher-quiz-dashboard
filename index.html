@@ -6,7 +6,7 @@
     <title>Teacher Quiz Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/introjs.min.css" />
-    <link rel="stylesheet" href="styles.css?v=20260907-2" />
+    <link rel="stylesheet" href="styles.css?v=20260907-5" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/intro.min.js"></script>
@@ -294,6 +294,22 @@
         </form>
     </dialog>
 
+    <dialog id="studentDifficultyDialog" class="modal difficulty-modal">
+        <form id="studentDifficultyForm" class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2>Student Difficulty</h2>
+                    <p id="studentDifficultySummary">Optionally set difficulty levels for individual students.</p>
+                </div>
+                <button class="btn" id="skipStudentDifficultyBtn" type="button">Skip</button>
+            </div>
+            <div id="studentDifficultyList" class="student-difficulty-list"></div>
+            <div class="form-actions">
+                <button class="btn primary" type="submit">Save Difficulty</button>
+            </div>
+        </form>
+    </dialog>
+
     <dialog id="exportDialog" class="modal export-modal">
         <form id="exportForm" class="modal-card">
             <div class="modal-head">
@@ -315,6 +331,6 @@
     </dialog>
 
     <div id="toast" class="toast"></div>
-    <script type="module" src="app.js?v=20260907-2"></script>
+    <script type="module" src="app.js?v=20260907-5"></script>
 </body>
 </html>
