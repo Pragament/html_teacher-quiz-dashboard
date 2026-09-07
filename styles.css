@@ -880,6 +880,34 @@ button {
     gap: 12px;
 }
 
+.question-type-picks {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 12px;
+}
+
+.question-type-picks legend {
+    padding: 0 6px;
+    color: #41546b;
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.question-type-picks p {
+    margin: 0;
+}
+
+.question-type-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
 .export-field-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1019,6 +1047,7 @@ button {
     .classroom-list,
     .section-list,
     .classroom-edit-grid,
+    .question-type-grid,
     .export-field-list,
     .stats-grid,
     .filters-grid {

@@ -41,6 +41,12 @@ const TOUR_PROMPT_DISABLED_KEY = 'teacherQuizDashboard.tourPromptDisabled.v1';
 const GEMINI_KEY_STORAGE_KEY = 'teacherQuizDashboard.geminiApiKey.v1';
 const AI_REVIEW_STORAGE_KEY = 'teacherQuizDashboard.aiReviews.v1';
 const GEMINI_MODEL = 'gemini-2.5-flash';
+const QUESTION_TYPE_PICK_FIELDS = [
+    { key: 'mcq', inputId: 'pickMcqCount' },
+    { key: 'fib', inputId: 'pickFibCount' },
+    { key: 'short_answer', inputId: 'pickShortAnswerCount' },
+    { key: 'true_false', inputId: 'pickTrueFalseCount' }
+];
 const EXPORT_FIELDS = [
     { id: 'classroomId', label: 'Quiz Session ID', header: 'classroomId', value: (s) => s.classroomId || activeClassroomId || '' },
     { id: 'classCode', label: 'Session Code', header: 'classCode', value: (s, classroom) => classroom.classCode || '' },
@@ -140,6 +146,10 @@ const els = {
     editSectionId: $('editSectionId'),
     editClassEnabled: $('editClassEnabled'),
     editQuestionBankList: $('editQuestionBankList'),
+    pickMcqCount: $('pickMcqCount'),
+    pickFibCount: $('pickFibCount'),
+    pickShortAnswerCount: $('pickShortAnswerCount'),
+    pickTrueFalseCount: $('pickTrueFalseCount'),
     saveClassroomBtn: $('saveClassroomBtn'),
     exportDialog: $('exportDialog'),
     exportForm: $('exportForm'),
@@ -470,6 +480,7 @@ function renderClassrooms() {
                     <span>${c.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
                 </span>
                 <span class="question-list-label">${esc(questionListName(c.questionBankListId))}</span>
+                ${questionTypePickLabel(c.randomQuestionTypeCounts) ? `<span class="question-list-label">${esc(questionTypePickLabel(c.randomQuestionTypeCounts))}</span>` : ''}
             </button>
             <button class="btn classroom-edit-btn" type="button" data-edit-classroom="${c.id}">Edit</button>
         </article>
@@ -567,6 +578,7 @@ async function openClassroomCreator(options = {}) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = '';
+    setQuestionTypePickFields();
     els.saveClassroomBtn.textContent = 'Create Quiz Session';
     if (modal) els.classroomDialog.showModal();
     else els.classroomDialog.show();
@@ -598,6 +610,7 @@ function openClassroomEditor(classroomId) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = classroom.questionBankListId || '';
+    setQuestionTypePickFields(classroom.randomQuestionTypeCounts);
     els.saveClassroomBtn.textContent = 'Save Quiz Session';
     els.classroomDialog.showModal();
 }
@@ -627,6 +640,9 @@ async function saveClassroomEdit(event) {
     }
     if (selectedList) updates.questionBankListId = selectedList.id;
     else updates.questionBankListId = deleteField();
+    const randomQuestionTypeCounts = readQuestionTypePickFields();
+    if (randomQuestionTypeCounts) updates.randomQuestionTypeCounts = randomQuestionTypeCounts;
+    else updates.randomQuestionTypeCounts = deleteField();
 
     try {
         const duplicate = await findClassroomByCode(classCode, classroomId);
@@ -658,6 +674,8 @@ async function saveClassroomEdit(event) {
             delete classroom.sectionName;
         }
         if (!selectedList) delete classroom.questionBankListId;
+        if (randomQuestionTypeCounts) classroom.randomQuestionTypeCounts = randomQuestionTypeCounts;
+        else delete classroom.randomQuestionTypeCounts;
         els.classroomDialog.close();
         render();
         toast('Quiz session updated');
@@ -1533,6 +1551,36 @@ function canAdminSection(section) {
     return (section.members || []).some(member => {
         return String(member.email || '').toLowerCase() === email && member.role === 'admin';
     });
+}
+
+function readQuestionTypePickFields() {
+    const counts = {};
+    QUESTION_TYPE_PICK_FIELDS.forEach(field => {
+        const value = Number($(field.inputId).value);
+        if (Number.isInteger(value) && value > 0) counts[field.key] = value;
+    });
+    return Object.keys(counts).length ? counts : null;
+}
+
+function setQuestionTypePickFields(counts = {}) {
+    QUESTION_TYPE_PICK_FIELDS.forEach(field => {
+        $(field.inputId).value = Number.isInteger(Number(counts?.[field.key])) && Number(counts[field.key]) > 0
+            ? String(counts[field.key])
+            : '';
+    });
+}
+
+function questionTypePickLabel(counts = {}) {
+    const labels = [
+        ['mcq', 'MCQ'],
+        ['fib', 'FIB'],
+        ['short_answer', 'Short'],
+        ['true_false', 'T/F']
+    ];
+    const parts = labels
+        .filter(([key]) => Number(counts?.[key]) > 0)
+        .map(([key, label]) => `${label} ${counts[key]}`);
+    return parts.length ? `Random pick: ${parts.join(', ')}` : '';
 }
 
 async function findClassroomByCode(classCode, excludeClassroomId = '') {

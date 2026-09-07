@@ -34,6 +34,12 @@ Document shape:
   sectionId: 'QQAP9O4UyvlaYhqz7jdE',
   sectionName: 'DSS grade 8',
   questionBankListId: 'qb_lists_v1 document id',
+  randomQuestionTypeCounts: {
+    mcq: 10,
+    fib: 5,
+    short_answer: 3,
+    true_false: 2
+  },
   updatedAt: Timestamp
 }
 ```
@@ -46,6 +52,7 @@ Important fields:
 - `sectionId` - used as a submission lookup fallback for all students in the classroom section.
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
+- `randomQuestionTypeCounts` - optional per-type limits for randomly picking questions from the selected question list. Missing or empty means use all questions.
 
 ### `classSections`
 
