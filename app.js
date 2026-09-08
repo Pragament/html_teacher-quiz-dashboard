@@ -80,6 +80,7 @@ let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'table';
 let submissionSort = { key: 'score', direction: 'desc' };
+let showArchivedClassrooms = false;
 let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
 let aiReviewInFlight = false;
@@ -157,6 +158,7 @@ const els = {
     pickShortAnswerCount: $('pickShortAnswerCount'),
     pickTrueFalseCount: $('pickTrueFalseCount'),
     saveClassroomBtn: $('saveClassroomBtn'),
+    showArchivedClassrooms: $('showArchivedClassrooms'),
     studentDifficultyDialog: $('studentDifficultyDialog'),
     studentDifficultyForm: $('studentDifficultyForm'),
     studentDifficultySummary: $('studentDifficultySummary'),
@@ -217,6 +219,7 @@ function bindEvents() {
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.refreshBtn.addEventListener('click', refreshActive);
     $('createClassroomBtn').addEventListener('click', openClassroomCreator);
+    els.showArchivedClassrooms.addEventListener('change', toggleArchivedClassrooms);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
     $('closeQuestionBtn').addEventListener('click', () => els.questionDialog.close());
     $('cancelGeminiBtn').addEventListener('click', () => els.geminiDialog.close());
@@ -416,7 +419,11 @@ async function loadClassrooms() {
         classrooms = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
             return (b.createdDate || 0) - (a.createdDate || 0);
         });
-        activeClassroomId = activeClassroomId || classrooms[0]?.id || null;
+        if (!activeClassroomId || (!showArchivedClassrooms && findClassroom(activeClassroomId)?.archived === true)) {
+            activeClassroomId = showArchivedClassrooms
+                ? classrooms[0]?.id || null
+                : classrooms.find(classroom => classroom.archived !== true)?.id || null;
+        }
         renderClassrooms();
         if (activeClassroomId) await loadSubmissionsForClassroom(activeClassroomId);
         else {
@@ -477,32 +484,99 @@ function render() {
 
 function renderClassrooms() {
     const search = $('classroomSearch').value.trim().toLowerCase();
+    els.showArchivedClassrooms.checked = showArchivedClassrooms;
     const visible = classrooms.filter(c => {
+        if ((c.archived === true) !== showArchivedClassrooms) return false;
         if (!search) return true;
         return [c.className, c.classCode, c.sectionName, c.sectionId].some(value => String(value || '').toLowerCase().includes(search));
     });
-    els.classroomCount.textContent = String(visible.length);
+    const archivedCount = classrooms.filter(c => c.archived === true).length;
+    els.classroomCount.textContent = showArchivedClassrooms ? `${visible.length}/${archivedCount}` : String(visible.length);
     els.classroomList.innerHTML = visible.length ? visible.map(c => `
-        <article class="classroom-card ${c.id === activeClassroomId ? 'active' : ''}">
+        <article class="classroom-card ${c.id === activeClassroomId ? 'active' : ''} ${c.archived === true ? 'archived' : ''}">
             <button class="classroom-select" data-classroom="${c.id}">
                 <strong>${esc(c.className || c.classCode || c.id)}</strong>
                 <span>${esc(c.sectionName || c.sectionId || 'No class section')}</span>
                 <span class="submission-meta">
                     <span>Session code ${esc(c.classCode || c.id)}</span>
                     <span>${c.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
+                    ${c.archived === true ? '<span>Archived</span>' : ''}
                 </span>
                 <span class="question-list-label">${esc(questionListName(c.questionBankListId))}</span>
                 ${questionTypePickLabel(c.randomQuestionTypeCounts) ? `<span class="question-list-label">${esc(questionTypePickLabel(c.randomQuestionTypeCounts))}</span>` : ''}
                 ${studentDifficultyLabel(c.studentDifficultyLevels) ? `<span class="question-list-label">${esc(studentDifficultyLabel(c.studentDifficultyLevels))}</span>` : ''}
             </button>
-            <button class="btn classroom-edit-btn" type="button" data-edit-classroom="${c.id}">Edit</button>
+            <div class="classroom-card-actions">
+                <button class="btn classroom-edit-btn" type="button" data-edit-classroom="${c.id}">Edit</button>
+                <button class="btn classroom-archive-btn" type="button" data-archive-classroom="${c.id}" data-archive-value="${c.archived === true ? 'false' : 'true'}">${c.archived === true ? 'Unarchive' : 'Archive'}</button>
+            </div>
         </article>
-    `).join('') : '<div class="empty-card">No matching quiz sessions.</div>';
+    `).join('') : `<div class="empty-card">No matching ${showArchivedClassrooms ? 'archived ' : ''}quiz sessions.</div>`;
     document.querySelectorAll('[data-classroom]').forEach(btn => {
         btn.addEventListener('click', () => loadSubmissionsForClassroom(btn.dataset.classroom));
     });
     document.querySelectorAll('[data-edit-classroom]').forEach(btn => {
         btn.addEventListener('click', () => openClassroomEditor(btn.dataset.editClassroom));
+    });
+    document.querySelectorAll('[data-archive-classroom]').forEach(btn => {
+        btn.addEventListener('click', () => archiveClassroom(btn.dataset.archiveClassroom, btn.dataset.archiveValue === 'true'));
+    });
+}
+
+function toggleArchivedClassrooms() {
+    showArchivedClassrooms = els.showArchivedClassrooms.checked;
+    const visible = classrooms.filter(classroom => (classroom.archived === true) === showArchivedClassrooms);
+    if (!visible.some(classroom => classroom.id === activeClassroomId)) {
+        activeClassroomId = visible[0]?.id || null;
+        submissions = [];
+        if (activeClassroomId) {
+            loadSubmissionsForClassroom(activeClassroomId);
+            return;
+        }
+    }
+    render();
+}
+
+async function archiveClassroom(classroomId, archived) {
+    const classroom = findClassroom(classroomId);
+    if (!classroom || classroom.creatorId !== currentUser?.uid) return;
+    const label = classroom.className || classroom.classCode || classroom.id;
+    const confirmed = window.confirm(`${archived ? 'Archive' : 'Unarchive'} quiz session "${label}"?`);
+    if (!confirmed) return;
+    const updates = {
+        archived,
+        archivedAt: archived ? serverTimestamp() : deleteField(),
+        archivedBy: archived ? currentUser.uid : deleteField(),
+        updatedAt: serverTimestamp()
+    };
+    try {
+        await updateDoc(doc(db, COLLECTIONS.classrooms, classroomId), updates);
+        applyClassroomArchiveState(classroomId, archived);
+        if (archived && activeClassroomId === classroomId && !showArchivedClassrooms) {
+            activeClassroomId = classrooms.find(item => item.archived !== true)?.id || null;
+            submissions = [];
+            if (activeClassroomId) {
+                await loadSubmissionsForClassroom(activeClassroomId);
+                toast('Quiz session archived');
+                return;
+            }
+        }
+        render();
+        toast(archived ? 'Quiz session archived' : 'Quiz session unarchived');
+    } catch (error) {
+        reportError(archived ? 'Unable to archive quiz session' : 'Unable to unarchive quiz session', error);
+    }
+}
+
+function applyClassroomArchiveState(classroomId, archived) {
+    [classrooms, sectionClassrooms].forEach(list => {
+        const item = list.find(classroom => classroom.id === classroomId);
+        if (!item) return;
+        item.archived = archived;
+        if (!archived) {
+            delete item.archivedAt;
+            delete item.archivedBy;
+        }
     });
 }
 
@@ -548,13 +622,18 @@ function renderSections() {
                 <span>${sectionClassrooms.length}</span>
             </div>
             ${sectionClassrooms.length ? sectionClassrooms.map(classroom => `
-                <article class="section-classroom-card">
+                <article class="section-classroom-card ${classroom.archived === true ? 'archived' : ''}">
                     <button class="section-classroom-main" type="button" data-section-classroom="${classroom.id}">
                         <strong>${esc(classroom.className || classroom.classCode || classroom.id)}</strong>
                         <span>Session code ${esc(classroom.classCode || classroom.id)}</span>
-                        <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}</span>
+                        <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}${classroom.archived === true ? ' · Archived' : ''}</span>
                     </button>
-                    ${classroom.creatorId === currentUser.uid ? `<button class="btn small" type="button" data-edit-classroom="${classroom.id}">Edit</button>` : ''}
+                    ${classroom.creatorId === currentUser.uid ? `
+                        <div class="section-classroom-actions">
+                            <button class="btn small" type="button" data-edit-classroom="${classroom.id}">Edit</button>
+                            <button class="btn small" type="button" data-archive-classroom="${classroom.id}" data-archive-value="${classroom.archived === true ? 'false' : 'true'}">${classroom.archived === true ? 'Unarchive' : 'Archive'}</button>
+                        </div>
+                    ` : ''}
                 </article>
             `).join('') : '<div class="empty-card">No quiz sessions found in this class section.</div>'}
         `
@@ -567,6 +646,9 @@ function renderSections() {
     });
     els.sectionClassrooms.querySelectorAll('[data-edit-classroom]').forEach(btn => {
         btn.addEventListener('click', () => editSectionClassroom(btn.dataset.editClassroom));
+    });
+    els.sectionClassrooms.querySelectorAll('[data-archive-classroom]').forEach(btn => {
+        btn.addEventListener('click', () => archiveClassroom(btn.dataset.archiveClassroom, btn.dataset.archiveValue === 'true'));
     });
 }
 

@@ -45,6 +45,9 @@ Document shape:
     '103': 'Hard'
   },
   studentDifficultyUpdatedAt: Timestamp,
+  archived: false,
+  archivedAt: Timestamp,
+  archivedBy: 'firebase-auth-uid',
   updatedAt: Timestamp
 }
 ```
@@ -59,6 +62,7 @@ Important fields:
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
 - `randomQuestionTypeCounts` - optional per-type limits for randomly picking questions from the selected question list. Missing or empty means use all questions.
 - `studentDifficultyLevels` - optional admission-number keyed difficulty overrides. Missing student entries use the quiz session default question selection.
+- `archived` - optional soft archive flag. Teachers can archive and unarchive quiz sessions they created.
 
 ### `classSections`
 

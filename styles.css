@@ -370,6 +370,12 @@ button {
     box-shadow: 0 0 0 3px rgba(23, 105, 170, 0.12);
 }
 
+.classroom-card.archived,
+.section-classroom-card.archived {
+    background: #f7f9fb;
+    border-style: dashed;
+}
+
 .classroom-card strong,
 .submission-card strong {
     font-size: 14px;
@@ -389,6 +395,12 @@ button {
 .classroom-edit-btn {
     min-height: 30px;
     padding: 0 10px;
+}
+
+.classroom-card-actions,
+.section-classroom-actions {
+    display: grid;
+    gap: 6px;
 }
 
 .btn.small {
@@ -1154,6 +1166,7 @@ button {
 
     .form-actions .btn,
     .section-classroom-card .btn,
+    .classroom-card-actions .btn,
     .classroom-edit-btn {
         width: 100%;
     }
