@@ -40,7 +40,8 @@ const EXPORT_SETTINGS_KEY = 'teacherQuizDashboard.exportSettings.v1';
 const TOUR_PROMPT_DISABLED_KEY = 'teacherQuizDashboard.tourPromptDisabled.v1';
 const GEMINI_KEY_STORAGE_KEY = 'teacherQuizDashboard.geminiApiKey.v1';
 const AI_REVIEW_STORAGE_KEY = 'teacherQuizDashboard.aiReviews.v1';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'models/gemini-3.6-flash';
+const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 const QUESTION_TYPE_PICK_FIELDS = [
     { key: 'mcq', inputId: 'pickMcqCount' },
     { key: 'fib', inputId: 'pickFibCount' },
@@ -1443,14 +1444,40 @@ function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {
 }
 
 async function callGeminiReview(apiKey, prompt) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    const response = await fetch(GEMINI_INTERACTIONS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+        },
         body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.1
+            model: GEMINI_MODEL,
+            input: prompt,
+            store: false,
+            response_format: {
+                type: 'text',
+                mime_type: 'application/json',
+                schema: {
+                    type: 'object',
+                    properties: {
+                        reviews: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    submissionId: { type: 'string' },
+                                    marks: { type: 'integer', minimum: 0, maximum: 4 },
+                                    reason: { type: 'string' }
+                                },
+                                required: ['submissionId', 'marks', 'reason']
+                            }
+                        }
+                    },
+                    required: ['reviews']
+                }
+            },
+            generation_config: {
+                thinking_level: 'minimal'
             }
         })
     });
@@ -1458,12 +1485,25 @@ async function callGeminiReview(apiKey, prompt) {
     if (!response.ok) {
         throw new Error(data.error?.message || 'Gemini request failed');
     }
-    const text = data.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
+    if (data.status === 'failed') {
+        const message = data.errors?.map(error => error.message).filter(Boolean).join(' ');
+        throw new Error(message || 'Gemini interaction failed');
+    }
+    const text = interactionText(data);
     const parsed = parseJsonResponse(text);
     if (!Array.isArray(parsed.reviews)) {
         throw new Error('Gemini did not return a reviews list');
     }
     return parsed;
+}
+
+function interactionText(interaction) {
+    return (interaction.steps || [])
+        .filter(step => step.type === 'model_output')
+        .flatMap(step => step.content || [])
+        .filter(part => part.type === 'text')
+        .map(part => part.text || '')
+        .join('');
 }
 
 function parseJsonResponse(text) {
