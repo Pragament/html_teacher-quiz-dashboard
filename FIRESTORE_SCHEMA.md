@@ -57,7 +57,7 @@ Important fields:
 - `creatorId` - must match the signed-in teacher UID for the classroom to appear.
 - `classCode` - shown in classroom cards and used as a submission lookup fallback.
 - `classEnabled` - shown as enabled/disabled.
-- `sectionId` - used as a submission lookup fallback for all students in the classroom section.
+- `sectionId` - links the quiz session to a class section.
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
 - `randomQuestionTypeCounts` - optional per-type limits for randomly picking questions from the selected question list. Missing or empty means use all questions.
@@ -225,7 +225,7 @@ Document shape:
 Important fields:
 
 - `classroomId` - used to load submissions for the selected classroom.
-- `sectionId` - used as a fallback to load all student submissions for a classroom section.
+- `sectionId` - links the submission to the student's class section.
 - `studentKey` - `${sectionId}_${admissionNo}`.
 - `answers` - contains question snapshots and student answer snapshots for detailed review.
 - `isCorrect` - `true` or `false` for auto-graded items, `null` for short-answer/manual-review items.
@@ -270,7 +270,6 @@ Submission loading for a selected classroom:
 ```txt
 qb_quiz_submissions_v1 where classroomId == classroom.id
 qb_quiz_submissions_v1 where classroomId == classroom.classCode
-qb_quiz_submissions_v1 where sectionId == classroom.sectionId
 ```
 
 The app de-duplicates submissions by document ID and sorts by `submittedAtMillis` newest first.

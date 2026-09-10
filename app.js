@@ -458,9 +458,6 @@ async function loadSubmissionsForClassroom(classroomId) {
     if (classroom.classCode && classroom.classCode !== classroom.id) {
         queries.push(query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.classCode)));
     }
-    if (classroom.sectionId) {
-        queries.push(query(collection(db, COLLECTIONS.submissions), where('sectionId', '==', classroom.sectionId)));
-    }
     try {
         for (const q of queries) {
             const snap = await getDocs(q);
@@ -1000,7 +997,13 @@ function updateAiReviewControls(message = '') {
     if (!activeQuestionReview) return;
     const reviewable = reviewableResponsesForActiveQuestion().length;
     const hasKey = !!loadGeminiKey();
-    els.aiReviewBtn.disabled = reviewable === 0;
+    const aiReviewBtnLabel = els.aiReviewBtn.querySelector('.btn-label');
+    els.aiReviewBtn.disabled = aiReviewInFlight || reviewable === 0;
+    els.aiReviewBtn.classList.toggle('is-loading', aiReviewInFlight);
+    els.aiReviewBtn.setAttribute('aria-busy', String(aiReviewInFlight));
+    if (aiReviewBtnLabel) {
+        aiReviewBtnLabel.textContent = aiReviewInFlight ? 'Reviewing...' : 'Review With Gemini';
+    }
     els.saveAiReviewOverridesBtn.disabled = activeQuestionReview.responses.length === 0;
     if (message) {
         els.aiReviewStatus.textContent = message;
@@ -1269,9 +1272,8 @@ async function reviewActiveQuestionWithGemini() {
         return;
     }
 
-    updateAiReviewControls('Reviewing with Gemini...');
     aiReviewInFlight = true;
-    els.aiReviewBtn.disabled = true;
+    updateAiReviewControls('Reviewing with Gemini...');
     try {
         const prompt = buildGeminiReviewPrompt(
             activeQuestionReview.answer,
@@ -1312,7 +1314,6 @@ async function reviewActiveQuestionWithGemini() {
     } finally {
         aiReviewInFlight = false;
         updateAiReviewControls(els.aiReviewStatus.textContent);
-        els.aiReviewBtn.disabled = reviewableResponsesForActiveQuestion().length === 0;
     }
 }
 

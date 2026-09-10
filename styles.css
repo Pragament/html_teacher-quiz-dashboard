@@ -110,6 +110,10 @@ button {
 }
 
 .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     min-height: 36px;
     border: 1px solid var(--line);
     border-radius: 7px;
@@ -118,11 +122,23 @@ button {
     padding: 0 13px;
     font-size: 13px;
     font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
 }
 
 .btn:hover {
     border-color: var(--line-strong);
     background: #f1f5f9;
+}
+
+.btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.68;
+}
+
+.btn:disabled:hover {
+    border-color: var(--line);
+    background: #fff;
 }
 
 .btn.primary {
@@ -133,6 +149,33 @@ button {
 
 .btn.primary:hover {
     background: var(--primary-dark);
+}
+
+.btn.primary:disabled,
+.btn.primary:disabled:hover {
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.btn-spinner {
+    display: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    animation: spin 0.7s linear infinite;
+}
+
+.btn.is-loading .btn-spinner {
+    display: inline-block;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .wide-btn {

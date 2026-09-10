@@ -23,7 +23,6 @@ Independent responsive app for teachers to sign in with Google, manage quiz sess
 8. App loads matching `qb_quiz_submissions_v1` records using:
    - `classroomId == classroom.id`
    - `classroomId == classroom.classCode` when different
-   - `sectionId == classroom.sectionId`
 9. Submissions are de-duplicated, sorted newest first, and shown in a table by default with a card-view switch.
 10. Teacher can filter by student, subject, chapter, and result type.
 11. Teacher can open a detailed submission review with per-question answers, correct answers, score state, and manual-review markers.
