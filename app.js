@@ -624,6 +624,7 @@ function renderSections() {
                     <button class="section-classroom-main" type="button" data-section-classroom="${classroom.id}">
                         <strong>${esc(classroom.className || classroom.classCode || classroom.id)}</strong>
                         <span>Session code ${esc(classroom.classCode || classroom.id)}</span>
+                        <span>Date ${esc(formatQuizSessionDate(classroom))}</span>
                         <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}${classroom.archived === true ? ' · Archived' : ''}</span>
                     </button>
                     ${classroom.creatorId === currentUser.uid ? `
@@ -1685,6 +1686,12 @@ function answerStatusLabel(answer) {
 function formatDate(value) {
     if (!value) return '';
     return new Date(value).toLocaleString();
+}
+
+function formatQuizSessionDate(classroom) {
+    const value = classroom?.createdDate || classroom?.createdAt?.toMillis?.() || classroom?.createdAt?.seconds * 1000;
+    if (!value) return 'Unavailable';
+    return new Date(value).toLocaleDateString();
 }
 
 function questionListName(questionBankListId) {
