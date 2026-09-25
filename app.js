@@ -79,7 +79,7 @@ let questionBankLists = [];
 let activeClassroomId = null;
 let activeSectionId = null;
 let submissions = [];
-let submissionViewMode = 'table';
+let submissionViewMode = 'students';
 let submissionSort = { key: 'score', direction: 'desc' };
 let showArchivedClassrooms = false;
 let activeQuestionReview = null;
@@ -143,6 +143,9 @@ const els = {
     tourPromptDialog: $('tourPromptDialog'),
     tourPromptForm: $('tourPromptForm'),
     dontShowTourAgain: $('dontShowTourAgain'),
+    studentAnalysisBtn: $('studentAnalysisBtn'),
+    topicAnalysisBtn: $('topicAnalysisBtn'),
+    questionAnalysisBtn: $('questionAnalysisBtn'),
     tableViewBtn: $('tableViewBtn'),
     cardViewBtn: $('cardViewBtn'),
     classroomDialog: $('classroomDialog'),
@@ -239,6 +242,9 @@ function bindEvents() {
     els.tourPromptForm.addEventListener('submit', startPromptedTour);
     els.exportForm.addEventListener('submit', exportSubmissionsCsv);
     $('exportCsvBtn').addEventListener('click', openExportDialog);
+    els.studentAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('students'));
+    els.topicAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('topics'));
+    els.questionAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('questions'));
     els.tableViewBtn.addEventListener('click', () => setSubmissionViewMode('table'));
     els.cardViewBtn.addEventListener('click', () => setSubmissionViewMode('cards'));
     filterIds.forEach(id => $(id).addEventListener('input', render));
@@ -880,11 +886,14 @@ function renderSubmissions() {
     const filtered = filteredSubmissions();
     const sorted = sortedSubmissions(filtered);
     els.submissionSummary.textContent = `${filtered.length} visible of ${submissions.length} loaded submissions`;
+    els.studentAnalysisBtn.classList.toggle('active', submissionViewMode === 'students');
+    els.topicAnalysisBtn.classList.toggle('active', submissionViewMode === 'topics');
+    els.questionAnalysisBtn.classList.toggle('active', submissionViewMode === 'questions');
     els.tableViewBtn.classList.toggle('active', submissionViewMode === 'table');
     els.cardViewBtn.classList.toggle('active', submissionViewMode === 'cards');
-    els.submissionList.className = submissionViewMode === 'table' ? 'submission-table-wrap' : 'submission-list';
+    els.submissionList.className = submissionViewMode === 'cards' ? 'submission-list' : 'submission-table-wrap analysis-table-wrap';
     els.submissionList.innerHTML = sorted.length
-        ? submissionViewMode === 'table' ? submissionTable(sorted) : sorted.map(submissionCard).join('')
+        ? renderSubmissionView(sorted)
         : '<div class="empty-card">No submissions match these filters.</div>';
     document.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', () => openSubmissionDetail(btn.dataset.detail));
@@ -895,6 +904,14 @@ function renderSubmissions() {
     document.querySelectorAll('[data-submission-sort]').forEach(btn => {
         btn.addEventListener('click', () => setSubmissionSort(btn.dataset.submissionSort));
     });
+}
+
+function renderSubmissionView(items) {
+    if (submissionViewMode === 'cards') return items.map(submissionCard).join('');
+    if (submissionViewMode === 'topics') return topicAnalysisTable(items);
+    if (submissionViewMode === 'questions') return questionAnalysisTable(items);
+    if (submissionViewMode === 'table') return submissionTable(items);
+    return studentAnalysisTable(items);
 }
 
 function setSubmissionViewMode(mode) {
@@ -930,6 +947,115 @@ function submissionTable(items) {
                         ${questionColumns.map(column => answerCell(answerForQuestion(s, column.key).answer)).join('')}
                         <td>${esc(scoreLabel(s))}</td>
                         <td>${manualCount(s) ? esc(`${manualCount(s)} manual`) : ''}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function studentAnalysisTable(items) {
+    return `
+        <table class="submission-table analysis-table">
+            <thead>
+                <tr>
+                    <th scope="col">${sortHeader('Student', 'student')}</th>
+                    <th scope="col">${sortHeader('Roll', 'roll')}</th>
+                    <th scope="col">${sortHeader('Score', 'score')}</th>
+                    <th scope="col">Attempted</th>
+                    <th scope="col">${sortHeader('Review', 'review')}</th>
+                    <th scope="col">Strong Topics</th>
+                    <th scope="col">Weak Topics</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${items.map(submission => {
+                    const summary = studentTopicSummary(submission);
+                    return `
+                        <tr>
+                            <th scope="row">
+                                <button class="table-link" type="button" data-detail="${submission.id}">${esc(submission.studentName || 'Student')}</button>
+                            </th>
+                            <td>${esc(submission.admissionNo || '')}</td>
+                            <td>${esc(scoreLabel(submission))}</td>
+                            <td>${esc(`${summary.attempted}/${summary.total}`)}</td>
+                            <td>${manualCount(submission) ? esc(`${manualCount(submission)} manual`) : '0'}</td>
+                            <td class="analysis-text-cell">${esc(summary.strongTopics.join(', ') || '-')}</td>
+                            <td class="analysis-text-cell">${esc(summary.weakTopics.join(', ') || '-')}</td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function topicAnalysisTable(items) {
+    const topics = Array.from(topicStats(items).values())
+        .sort((a, b) => a.avgPercent - b.avgPercent || b.attempted - a.attempted || compareText(a.label, b.label));
+    return `
+        <table class="submission-table analysis-table">
+            <thead>
+                <tr>
+                    <th scope="col">Topic</th>
+                    <th scope="col">Students</th>
+                    <th scope="col">Answers</th>
+                    <th scope="col">Avg</th>
+                    <th scope="col">Correct</th>
+                    <th scope="col">Partial</th>
+                    <th scope="col">Wrong</th>
+                    <th scope="col">Needs Review</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${topics.map(topic => `
+                    <tr>
+                        <th scope="row" class="analysis-text-cell">${esc(topic.label)}</th>
+                        <td>${topic.students.size}</td>
+                        <td>${topic.total}</td>
+                        <td>${topic.avgPercent}%</td>
+                        <td>${percentLabel(topic.correct, topic.total)}</td>
+                        <td>${percentLabel(topic.partial, topic.total)}</td>
+                        <td>${percentLabel(topic.wrong, topic.total)}</td>
+                        <td>${topic.pending}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function questionAnalysisTable(items) {
+    const columns = buildQuestionColumns(items);
+    const rows = columns.map(column => questionColumnStats(items, column))
+        .sort((a, b) => a.avgPercent - b.avgPercent || b.seenBy - a.seenBy || compareText(a.label, b.label));
+    return `
+        <table class="submission-table analysis-table question-analysis-table">
+            <thead>
+                <tr>
+                    <th scope="col">Question</th>
+                    <th scope="col">Topic</th>
+                    <th scope="col">Seen By</th>
+                    <th scope="col">Avg</th>
+                    <th scope="col">Correct</th>
+                    <th scope="col">Partial</th>
+                    <th scope="col">Wrong</th>
+                    <th scope="col">Needs Review</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map(row => `
+                    <tr>
+                        <th scope="row" class="analysis-text-cell">
+                            <button class="table-link question-analysis-link" type="button" data-question-key="${esc(row.key)}" title="${esc(row.title)}">${esc(row.title)}</button>
+                        </th>
+                        <td class="analysis-text-cell">${esc(row.topic)}</td>
+                        <td>${row.seenBy}</td>
+                        <td>${row.avgPercent}%</td>
+                        <td>${percentLabel(row.correct, row.total)}</td>
+                        <td>${percentLabel(row.partial, row.total)}</td>
+                        <td>${percentLabel(row.wrong, row.total)}</td>
+                        <td>${row.pending}</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -973,6 +1099,135 @@ function questionKeyForAnswer(answer, index) {
     const type = String(answer.type || '').trim();
     if (prompt || correct || type) return `sig:${type}::${prompt}::${correct}`;
     return `position:${index}`;
+}
+
+function studentTopicSummary(submission) {
+    const topics = new Map();
+    const answers = submission.answers || [];
+    answers.forEach((answer, index) => {
+        const label = topicLabelForAnswer(answer, submission);
+        const stats = ensureTopicStats(topics, label);
+        addAnswerToStats(stats, submission, answer, index);
+    });
+    const topicRows = Array.from(topics.values()).map(stats => ({
+        label: stats.label,
+        avg: stats.maxMarks ? Math.round((stats.earnedMarks / stats.maxMarks) * 100) : 0,
+        attempted: stats.attempted
+    })).filter(topic => topic.attempted > 0);
+    return {
+        total: answers.length,
+        attempted: answers.filter(answer => answerResponseText(answer)).length,
+        strongTopics: topicRows.filter(topic => topic.avg >= 75).sort((a, b) => b.avg - a.avg).slice(0, 3).map(topic => topic.label),
+        weakTopics: topicRows.filter(topic => topic.avg < 50).sort((a, b) => a.avg - b.avg).slice(0, 3).map(topic => topic.label)
+    };
+}
+
+function topicStats(items) {
+    const topics = new Map();
+    items.forEach(submission => {
+        (submission.answers || []).forEach((answer, index) => {
+            const label = topicLabelForAnswer(answer, submission);
+            const stats = ensureTopicStats(topics, label);
+            addAnswerToStats(stats, submission, answer, index);
+        });
+    });
+    topics.forEach(finalizeAnalysisStats);
+    return topics;
+}
+
+function questionColumnStats(items, column) {
+    const stats = createAnalysisStats(column.title);
+    let topic = '';
+    items.forEach(submission => {
+        const { answer, index } = answerForQuestion(submission, column.key);
+        if (!answer) return;
+        if (!topic) topic = topicLabelForAnswer(answer, submission);
+        addAnswerToStats(stats, submission, answer, index);
+    });
+    finalizeAnalysisStats(stats);
+    return {
+        key: column.key,
+        label: column.label,
+        title: column.title,
+        topic: topic || 'Unmapped',
+        seenBy: stats.students.size,
+        total: stats.total,
+        avgPercent: stats.avgPercent,
+        correct: stats.correct,
+        partial: stats.partial,
+        wrong: stats.wrong,
+        pending: stats.pending
+    };
+}
+
+function ensureTopicStats(topics, label) {
+    if (!topics.has(label)) topics.set(label, createAnalysisStats(label));
+    return topics.get(label);
+}
+
+function createAnalysisStats(label) {
+    return {
+        label,
+        students: new Set(),
+        total: 0,
+        attempted: 0,
+        earnedMarks: 0,
+        maxMarks: 0,
+        correct: 0,
+        partial: 0,
+        wrong: 0,
+        pending: 0,
+        avgPercent: 0
+    };
+}
+
+function addAnswerToStats(stats, submission, answer, index) {
+    stats.total += 1;
+    stats.students.add(submission.studentKey || submission.id || `${submission.sectionId || ''}_${submission.admissionNo || ''}`);
+    if (answerResponseText(answer)) stats.attempted += 1;
+    const marks = answerMarks(submission, answer, index);
+    if (marks === null) {
+        stats.pending += 1;
+        return;
+    }
+    stats.earnedMarks += marks;
+    stats.maxMarks += 4;
+    if (marks >= 4) stats.correct += 1;
+    else if (marks > 0) stats.partial += 1;
+    else stats.wrong += 1;
+}
+
+function finalizeAnalysisStats(stats) {
+    stats.avgPercent = stats.maxMarks ? Math.round((stats.earnedMarks / stats.maxMarks) * 100) : 0;
+    return stats;
+}
+
+function answerMarks(submission, answer, index) {
+    const review = getAiReview(submission, answer, index);
+    if (hasSavedAiReview(review)) return Number(review.marks || 0);
+    if (answer?.isCorrect === true) return 4;
+    if (answer?.isCorrect === false) return 0;
+    return null;
+}
+
+function topicLabelForAnswer(answer, submission) {
+    const answerTopics = [
+        answer?.topic,
+        answer?.topicName,
+        answer?.learningOutcome,
+        answer?.chapter,
+        answer?.chapterName,
+        answer?.subject
+    ].filter(Boolean);
+    if (answerTopics.length) return answerTopics.join(' / ');
+    const chapters = Array.isArray(submission.chapters) ? submission.chapters.filter(Boolean).join(', ') : '';
+    const subject = submission.subject || '';
+    return [subject, chapters].filter(Boolean).join(' / ') || 'Unmapped';
+}
+
+function percentLabel(count, total) {
+    if (!total) return '0%';
+    return `${Math.round((count / total) * 100)}%`;
 }
 
 function sortHeader(label, key) {
