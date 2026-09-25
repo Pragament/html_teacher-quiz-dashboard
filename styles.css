@@ -721,8 +721,134 @@ button {
     width: min(640px, calc(100vw - 24px));
 }
 
+.student-report-modal {
+    width: min(1180px, calc(100vw - 24px));
+}
+
 .tour-prompt-modal {
     width: min(520px, calc(100vw - 24px));
+}
+
+.student-report-tools {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.student-report-tools .field {
+    width: min(280px, 100%);
+}
+
+.student-report-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.student-report-section {
+    display: grid;
+    gap: 8px;
+}
+
+.student-report-section h3 {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+}
+
+.student-report-insights {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f5f9ff;
+    padding: 10px 12px;
+}
+
+.student-insight-list {
+    display: grid;
+    gap: 5px;
+}
+
+.student-insight-list p {
+    margin: 0;
+    color: #41546b;
+    line-height: 1.4;
+}
+
+.student-trend {
+    min-height: 170px;
+    display: flex;
+    align-items: end;
+    gap: 10px;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+}
+
+.trend-point {
+    width: 54px;
+    min-width: 54px;
+    display: grid;
+    grid-template-rows: auto 112px auto;
+    gap: 6px;
+    text-align: center;
+}
+
+.trend-point span,
+.trend-point small {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.trend-bar {
+    display: flex;
+    align-items: end;
+    justify-content: center;
+    border-radius: 7px;
+    background: var(--panel-soft);
+    overflow: hidden;
+}
+
+.trend-bar i {
+    width: 100%;
+    display: block;
+    background: var(--primary);
+}
+
+.student-report-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.student-report-table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+}
+
+.student-report-table th,
+.student-report-table td {
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12px;
+    line-height: 1.35;
+    vertical-align: top;
+}
+
+.student-report-table thead th {
+    background: #edf3fa;
+    color: #41546b;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.student-report-table tbody tr:last-child th,
+.student-report-table tbody tr:last-child td {
+    border-bottom: 0;
 }
 
 .question-prompt {
@@ -1255,6 +1381,7 @@ button {
     .section-list,
     .classroom-edit-grid,
     .ai-response-row,
+    .student-report-grid,
     .question-type-grid,
     .student-difficulty-tools,
     .student-difficulty-row,

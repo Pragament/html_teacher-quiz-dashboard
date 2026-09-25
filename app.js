@@ -96,6 +96,7 @@ let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
 let aiReviewInFlight = false;
 let selectedAiReviewKeys = new Set();
+let activeStudentReport = null;
 let difficultySession = null;
 let difficultyStudents = [];
 let difficultySubmissionHistory = [];
@@ -135,6 +136,17 @@ const els = {
     detailMeta: $('detailMeta'),
     detailStats: $('detailStats'),
     answerDetails: $('answerDetails'),
+    studentReportDialog: $('studentReportDialog'),
+    studentReportTitle: $('studentReportTitle'),
+    studentReportMeta: $('studentReportMeta'),
+    studentReportSubjectFilter: $('studentReportSubjectFilter'),
+    studentReportSummary: $('studentReportSummary'),
+    studentReportInsights: $('studentReportInsights'),
+    studentReportTrend: $('studentReportTrend'),
+    studentReportSubjectTable: $('studentReportSubjectTable'),
+    studentReportTypeTable: $('studentReportTypeTable'),
+    studentReportTopicTable: $('studentReportTopicTable'),
+    studentReportRecentTable: $('studentReportRecentTable'),
     questionDialog: $('questionDialog'),
     questionDetailTitle: $('questionDetailTitle'),
     questionDetailMeta: $('questionDetailMeta'),
@@ -240,6 +252,8 @@ function bindEvents() {
     $('createClassroomBtn').addEventListener('click', openClassroomCreator);
     els.showArchivedClassrooms.addEventListener('change', toggleArchivedClassrooms);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
+    $('closeStudentReportBtn').addEventListener('click', () => els.studentReportDialog.close());
+    els.studentReportSubjectFilter.addEventListener('change', renderStudentReport);
     $('closeQuestionBtn').addEventListener('click', () => els.questionDialog.close());
     $('cancelGeminiBtn').addEventListener('click', () => els.geminiDialog.close());
     els.geminiKeyForm.addEventListener('submit', saveGeminiKey);
@@ -960,6 +974,9 @@ function renderSubmissions() {
     document.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', () => openSubmissionDetail(btn.dataset.detail));
     });
+    document.querySelectorAll('[data-student-report]').forEach(btn => {
+        btn.addEventListener('click', () => openStudentReport(btn.dataset.studentReport));
+    });
     document.querySelectorAll('[data-question-key]').forEach(btn => {
         btn.addEventListener('click', () => openQuestionDetail(btn.dataset.questionKey));
     });
@@ -1039,7 +1056,7 @@ function studentAnalysisTable(items) {
                     return `
                         <tr>
                             <th scope="row">
-                                <button class="table-link" type="button" data-detail="${submission.id}">${esc(submission.studentName || 'Student')}</button>
+                                <button class="table-link" type="button" data-student-report="${submission.id}">${esc(submission.studentName || 'Student')}</button>
                             </th>
                             <td>${esc(submission.admissionNo || '')}</td>
                             <td>${esc(scoreLabel(submission))}</td>
@@ -1658,6 +1675,285 @@ function openSubmissionDetail(id) {
     `).join('');
     renderRich(els.answerDetails);
     els.detailDialog.showModal();
+}
+
+async function openStudentReport(submissionId) {
+    const seed = submissions.find(item => item.id === submissionId);
+    if (!seed) return;
+    activeStudentReport = { seed, history: [], subject: '' };
+    els.studentReportTitle.textContent = seed.studentName || 'Student Report';
+    els.studentReportMeta.textContent = `${seed.admissionNo || ''} · Loading performance history...`;
+    els.studentReportSubjectFilter.innerHTML = '<option value="">All subjects</option>';
+    els.studentReportSummary.innerHTML = '<div class="empty-card">Loading student report...</div>';
+    els.studentReportInsights.innerHTML = '';
+    els.studentReportTrend.innerHTML = '';
+    els.studentReportSubjectTable.innerHTML = '';
+    els.studentReportTypeTable.innerHTML = '';
+    els.studentReportTopicTable.innerHTML = '';
+    els.studentReportRecentTable.innerHTML = '';
+    els.studentReportDialog.showModal();
+    try {
+        const history = await getSubmissionHistoryForStudent(seed);
+        await loadQuestionMetadataForSubmissions(history);
+        activeStudentReport = { seed, history, subject: '' };
+        renderStudentReportSubjectOptions(history);
+        renderStudentReport();
+    } catch (error) {
+        els.studentReportMeta.textContent = error.message || 'Unable to load student report';
+        els.studentReportSummary.innerHTML = '<div class="empty-card">Unable to load this student report.</div>';
+    }
+}
+
+async function getSubmissionHistoryForStudent(seed) {
+    const sectionId = seed.sectionId || findClassroom(activeClassroomId)?.sectionId || '';
+    const byId = new Map();
+    submissions.forEach(submission => byId.set(submission.id, submission));
+    if (sectionId) {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.submissions), where('sectionId', '==', sectionId)));
+        snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+    }
+    return Array.from(byId.values())
+        .filter(submission => studentMatchesSubmission(seed, submission))
+        .sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
+}
+
+function studentMatchesSubmission(seed, submission) {
+    const seedAdmission = String(seed.admissionNo || '').trim();
+    const admission = String(submission.admissionNo || '').trim();
+    const seedKey = String(seed.studentKey || '').trim();
+    const key = String(submission.studentKey || '').trim();
+    const seedName = String(seed.studentName || '').trim().toLowerCase();
+    const name = String(submission.studentName || '').trim().toLowerCase();
+    if (seedAdmission && admission === seedAdmission) return true;
+    if (seedKey && key === seedKey) return true;
+    if (seedAdmission && key.endsWith(`_${seedAdmission}`)) return true;
+    if (seedKey && admission && seedKey.endsWith(`_${admission}`)) return true;
+    return !!seedName && seedName === name && (!seed.sectionId || seed.sectionId === submission.sectionId);
+}
+
+function renderStudentReportSubjectOptions(history) {
+    const subjects = Array.from(new Set(history.map(submission => submission.subject || 'Any subject')))
+        .sort((a, b) => compareText(a, b));
+    els.studentReportSubjectFilter.innerHTML = `
+        <option value="">All subjects</option>
+        ${subjects.map(subject => `<option value="${esc(subject)}">${esc(subject)}</option>`).join('')}
+    `;
+}
+
+function renderStudentReport() {
+    if (!activeStudentReport) return;
+    activeStudentReport.subject = els.studentReportSubjectFilter.value;
+    const { seed, history } = activeStudentReport;
+    const items = history.filter(submission => {
+        const subject = submission.subject || 'Any subject';
+        return !activeStudentReport.subject || subject === activeStudentReport.subject;
+    });
+    const metrics = studentReportMetrics(items);
+    els.studentReportTitle.textContent = seed.studentName || 'Student Report';
+    els.studentReportMeta.textContent = `${seed.admissionNo || ''} · ${items.length} of ${history.length} submission${history.length === 1 ? '' : 's'} shown`;
+    els.studentReportSummary.innerHTML = `
+        <div class="stat-card"><span>Average</span><strong>${metrics.average}%</strong></div>
+        <div class="stat-card"><span>Best</span><strong>${metrics.best}%</strong></div>
+        <div class="stat-card"><span>Latest</span><strong>${metrics.latest}%</strong></div>
+        <div class="stat-card"><span>Pending Review</span><strong>${metrics.pending}</strong></div>
+    `;
+    els.studentReportInsights.innerHTML = studentReportInsightsHtml(items);
+    els.studentReportTrend.innerHTML = studentReportTrendHtml(items);
+    els.studentReportSubjectTable.innerHTML = studentReportSubjectTableHtml(items);
+    els.studentReportTypeTable.innerHTML = studentReportTypeTableHtml(items);
+    els.studentReportTopicTable.innerHTML = studentReportTopicTableHtml(items);
+    els.studentReportRecentTable.innerHTML = studentReportRecentTableHtml(items);
+}
+
+function studentReportMetrics(items) {
+    const scored = items.filter(submission => scoreDetails(submission).maxMarks > 0);
+    const average = scored.length
+        ? Math.round(scored.reduce((sum, submission) => sum + scoreDetails(submission).percent, 0) / scored.length)
+        : 0;
+    return {
+        average,
+        best: scored.length ? Math.max(...scored.map(submission => scoreDetails(submission).percent)) : 0,
+        latest: scored.length ? scoreDetails(scored[0]).percent : 0,
+        pending: items.reduce((sum, submission) => sum + manualCount(submission), 0)
+    };
+}
+
+function studentReportInsightsHtml(items) {
+    if (!items.length) return '<div class="empty-card">No submissions match this subject filter.</div>';
+    const topics = Array.from(studentReportTopicStats(items).values()).sort((a, b) => a.avgPercent - b.avgPercent);
+    const types = Array.from(studentReportTypeStats(items).values()).sort((a, b) => a.avgPercent - b.avgPercent);
+    const weakTopics = topics.filter(topic => topic.total >= 2 && topic.avgPercent < 50).slice(0, 3).map(topic => topic.label);
+    const strongTopics = topics.filter(topic => topic.total >= 2 && topic.avgPercent >= 75).sort((a, b) => b.avgPercent - a.avgPercent).slice(0, 3).map(topic => topic.label);
+    const weakestType = types.find(type => type.total > 0);
+    const pending = items.reduce((sum, submission) => sum + manualCount(submission), 0);
+    const insights = [
+        strongTopics.length ? `Strengths: ${strongTopics.join(', ')}.` : 'Strengths: not enough repeated high-scoring topic data yet.',
+        weakTopics.length ? `Needs practice: ${weakTopics.join(', ')}.` : 'Needs practice: no repeated low-scoring topic pattern detected.',
+        weakestType ? `Question type watch: ${questionTypeLabel(weakestType.type)} averages ${weakestType.avgPercent}%.` : '',
+        pending ? `${pending} answer${pending === 1 ? '' : 's'} still need manual or AI review.` : 'No pending manual review in the selected submissions.'
+    ].filter(Boolean);
+    return `<div class="student-insight-list">${insights.map(item => `<p>${esc(item)}</p>`).join('')}</div>`;
+}
+
+function studentReportTrendHtml(items) {
+    const trend = [...items].sort((a, b) => (a.submittedAtMillis || 0) - (b.submittedAtMillis || 0));
+    if (!trend.length) return '<div class="empty-card">No trend data available.</div>';
+    return `
+        <h3>Performance Trend</h3>
+        <div class="student-trend">
+            ${trend.map(submission => {
+                const percent = scorePercent(submission);
+                return `
+                    <div class="trend-point" title="${esc(formatDate(submission.submittedAtMillis))} · ${percent}%">
+                        <span>${percent}%</span>
+                        <div class="trend-bar"><i style="height:${Math.max(4, Math.min(100, percent))}%"></i></div>
+                        <small>${esc(shortDate(submission.submittedAtMillis))}</small>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function studentReportSubjectTableHtml(items) {
+    const rows = Array.from(studentReportSubjectStats(items).values()).sort((a, b) => compareText(a.subject, b.subject));
+    return studentReportSimpleTable('Subject Summary', ['Subject', 'Sessions', 'Avg', 'Best', 'Pending'], rows.map(row => [
+        row.subject,
+        row.sessions,
+        `${row.avgPercent}%`,
+        `${row.bestPercent}%`,
+        row.pending
+    ]));
+}
+
+function studentReportTypeTableHtml(items) {
+    const rows = Array.from(studentReportTypeStats(items).values()).sort((a, b) => a.avgPercent - b.avgPercent);
+    return studentReportSimpleTable('Question Type Breakdown', ['Type', 'Attempted', 'Avg', 'Correct', 'Pending'], rows.map(row => [
+        questionTypeLabel(row.type),
+        row.attempted,
+        `${row.avgPercent}%`,
+        percentLabel(row.correct, row.total),
+        row.pending
+    ]));
+}
+
+function studentReportTopicTableHtml(items) {
+    const rows = Array.from(studentReportTopicStats(items).values()).sort((a, b) => a.avgPercent - b.avgPercent || compareText(a.label, b.label));
+    return studentReportSimpleTable('Topic / Chapter Mastery', ['Topic', 'Attempted', 'Avg', 'Difficulty Mix', 'Status'], rows.map(row => [
+        row.label,
+        row.attempted,
+        `${row.avgPercent}%`,
+        difficultyMixLabel(row.difficulties),
+        masteryStatus(row)
+    ]));
+}
+
+function studentReportRecentTableHtml(items) {
+    const rows = items.slice(0, 12).map(submission => [
+        formatDate(submission.submittedAtMillis) || '-',
+        quizSessionLabel(submission),
+        submission.subject || 'Any subject',
+        scoreLabel(submission),
+        manualCount(submission)
+    ]);
+    return studentReportSimpleTable('Recent Submissions', ['Date', 'Quiz Session', 'Subject', 'Score', 'Review'], rows);
+}
+
+function studentReportSimpleTable(title, headers, rows) {
+    if (!rows.length) return `<h3>${esc(title)}</h3><div class="empty-card">No data available.</div>`;
+    return `
+        <h3>${esc(title)}</h3>
+        <div class="student-report-table-wrap">
+            <table class="student-report-table">
+                <thead>
+                    <tr>${headers.map(header => `<th scope="col">${esc(header)}</th>`).join('')}</tr>
+                </thead>
+                <tbody>
+                    ${rows.map(row => `
+                        <tr>${row.map((cell, index) => `${index === 0 ? '<th scope="row">' : '<td>'}${esc(cell)}${index === 0 ? '</th>' : '</td>'}`).join('')}</tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function studentReportSubjectStats(items) {
+    const subjects = new Map();
+    items.forEach(submission => {
+        const subject = submission.subject || 'Any subject';
+        if (!subjects.has(subject)) {
+            subjects.set(subject, { subject, sessions: 0, totalPercent: 0, bestPercent: 0, pending: 0 });
+        }
+        const stats = subjects.get(subject);
+        const percent = scorePercent(submission);
+        stats.sessions += 1;
+        stats.totalPercent += percent;
+        stats.bestPercent = Math.max(stats.bestPercent, percent);
+        stats.pending += manualCount(submission);
+    });
+    subjects.forEach(stats => {
+        stats.avgPercent = stats.sessions ? Math.round(stats.totalPercent / stats.sessions) : 0;
+    });
+    return subjects;
+}
+
+function studentReportTopicStats(items) {
+    const topics = new Map();
+    items.forEach(submission => {
+        (submission.answers || []).forEach((answer, index) => {
+            const label = topicLabelForAnswer(answer, submission);
+            const stats = ensureTopicStats(topics, label, label, 'mixed');
+            addAnswerToStats(stats, submission, answer, index);
+            const difficulty = answerDifficultyLabel(answer);
+            stats.difficulties = stats.difficulties || {};
+            stats.difficulties[difficulty] = (stats.difficulties[difficulty] || 0) + 1;
+        });
+    });
+    topics.forEach(finalizeAnalysisStats);
+    return topics;
+}
+
+function studentReportTypeStats(items) {
+    const types = new Map();
+    items.forEach(submission => {
+        (submission.answers || []).forEach((answer, index) => {
+            const type = normalizedQuestionType(answer);
+            const stats = ensureTopicStats(types, type, questionTypeLabel(type), type);
+            addAnswerToStats(stats, submission, answer, index);
+        });
+    });
+    types.forEach(finalizeAnalysisStats);
+    return types;
+}
+
+function answerDifficultyLabel(answer) {
+    const question = questionMetadataForAnswer(answer);
+    return question?.difficulty || answer?.difficulty || 'Unspecified';
+}
+
+function difficultyMixLabel(difficulties = {}) {
+    return Object.entries(difficulties)
+        .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
+        .map(([label, count]) => `${label} ${count}`)
+        .join(', ') || '-';
+}
+
+function masteryStatus(row) {
+    if (row.attempted < 2) return 'Insufficient Data';
+    if (row.avgPercent >= 75) return 'Strong';
+    if (row.avgPercent >= 50) return 'Watch';
+    return 'Needs Practice';
+}
+
+function quizSessionLabel(submission) {
+    const classroom = findClassroom(submission.classroomId);
+    return classroom?.className || submission.className || submission.classroomName || submission.classroomId || 'Quiz session';
+}
+
+function shortDate(value) {
+    if (!value) return '-';
+    return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function openExportDialog() {
