@@ -162,6 +162,90 @@ Important fields:
 - `name` - shown in the classroom question-list dropdown.
 - `questionIds` - stores question document IDs, not embedded question snapshots.
 
+### `qb_taxonomy_v1`
+
+Path:
+
+```txt
+/qb_taxonomy_v1/{taxonomyId}
+```
+
+Document shape:
+
+```js
+{
+  type: 'class' | 'subject' | 'chapter' | 'topic',
+  label: 'Polynomials',
+  parentId: 'class_ix__subject_mathematics__chapter_algebra',
+  classId: 'class_ix',
+  subjectId: 'class_ix__subject_mathematics',
+  chapterId: 'class_ix__subject_mathematics__chapter_algebra',
+  topicId: 'class_ix__subject_mathematics__chapter_algebra__topic_polynomials',
+  updatedAt: Timestamp
+}
+```
+
+Important fields:
+
+- `type` - identifies the taxonomy level.
+- `label` - human-readable label shown in topic analysis.
+- `classId`, `subjectId`, `chapterId`, `topicId` - stable IDs used by question documents.
+- `parentId` - parent taxonomy ID for hierarchy traversal.
+
+### `qb_questions_v1`
+
+Path:
+
+```txt
+/qb_questions_v1/{questionId}
+```
+
+Document shape:
+
+```js
+{
+  type: 'mcq' | 'true_false' | 'fib' | 'short_answer',
+  classId: 'class_ix',
+  subjectId: 'class_ix__subject_mathematics',
+  chapterId: 'class_ix__subject_mathematics__chapter_algebra',
+  topicId: 'class_ix__subject_mathematics__chapter_algebra__topic_polynomials',
+  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Very Hard',
+  status: 'published' | 'draft' | 'archived',
+  promptHtml: '<p>Question text with rich HTML</p>',
+  options: [
+    { html: 'Option A rich HTML', correct: true },
+    { html: 'Option B rich HTML', correct: false },
+    { html: 'Option C rich HTML', correct: true },
+    { html: 'Option D rich HTML', correct: false }
+  ],
+  trueAnswer: true,
+  fibBanks: [
+    { label: 'Blank 1', answers: ['0', 'zero'] },
+    { label: 'Blank 2', answers: ['100', 'one hundred'] }
+  ],
+  shortAnswerHtml: '<p>Expected answer</p>',
+  translations: {
+    hi: {
+      question: 'Translated question',
+      answer: 'Translated answer',
+      options: ['Translated A', 'Translated B', 'Translated C', 'Translated D']
+    }
+  },
+  authorUid: 'firebase-auth-uid',
+  authorName: 'Teacher Name',
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+  archivedAt: Timestamp
+}
+```
+
+Important fields:
+
+- `type` - used by the dashboard question-type filter and analysis tables.
+- `classId`, `subjectId`, `chapterId`, `topicId` - joined client-side with `qb_taxonomy_v1` to show topic paths.
+- `promptHtml` - used as the question label when a submission answer only stores `questionId`.
+- `status` - allows question-bank tools to hide draft or archived items from quiz selection.
+
 ### `qb_quiz_submissions_v1`
 
 Path:
