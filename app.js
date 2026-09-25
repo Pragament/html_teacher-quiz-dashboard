@@ -11,6 +11,7 @@ import {
     collection,
     deleteField,
     doc,
+    getDoc,
     getDocs,
     getFirestore,
     query,
@@ -33,6 +34,8 @@ const COLLECTIONS = {
     classSections: 'classSections',
     classrooms: 'classrooms',
     questionBankLists: 'qb_lists_v1',
+    questionBankQuestions: 'qb_questions_v1',
+    taxonomy: 'qb_taxonomy_v1',
     submissions: 'qb_quiz_submissions_v1'
 };
 
@@ -76,6 +79,8 @@ let classSections = [];
 let sectionStudents = [];
 let sectionClassrooms = [];
 let questionBankLists = [];
+let questionMetadataById = new Map();
+let taxonomyById = new Map();
 let activeClassroomId = null;
 let activeSectionId = null;
 let submissions = [];
@@ -205,6 +210,8 @@ onAuthStateChanged(auth, async (user) => {
         sectionStudents = [];
         sectionClassrooms = [];
         questionBankLists = [];
+        questionMetadataById = new Map();
+        taxonomyById = new Map();
         submissions = [];
         activeClassroomId = null;
         activeSectionId = null;
@@ -366,6 +373,49 @@ async function loadQuestionBankLists() {
     }
 }
 
+async function loadQuestionMetadataForSubmissions(items) {
+    const questionIds = Array.from(new Set(items.flatMap(submission => {
+        return (submission.answers || []).map(answer => answer?.questionId).filter(Boolean);
+    })));
+    const missingQuestionIds = questionIds.filter(id => !questionMetadataById.has(id));
+    if (!missingQuestionIds.length) {
+        await loadTaxonomyForQuestions(questionIds.map(id => questionMetadataById.get(id)).filter(Boolean));
+        return;
+    }
+    try {
+        const loadedQuestions = [];
+        for (const questionId of missingQuestionIds) {
+            const snap = await getDoc(doc(db, COLLECTIONS.questionBankQuestions, questionId));
+            if (!snap.exists()) {
+                questionMetadataById.set(questionId, null);
+                continue;
+            }
+            const question = { id: snap.id, ...snap.data() };
+            questionMetadataById.set(questionId, question);
+            loadedQuestions.push(question);
+        }
+        const cachedQuestions = questionIds.map(id => questionMetadataById.get(id)).filter(Boolean);
+        await loadTaxonomyForQuestions([...loadedQuestions, ...cachedQuestions]);
+    } catch (error) {
+        toast('Unable to load question topic metadata');
+    }
+}
+
+async function loadTaxonomyForQuestions(questions) {
+    const taxonomyIds = Array.from(new Set(questions.flatMap(question => {
+        return [question.classId, question.subjectId, question.chapterId, question.topicId].filter(Boolean);
+    }))).filter(id => !taxonomyById.has(id));
+    if (!taxonomyIds.length) return;
+    for (const taxonomyId of taxonomyIds) {
+        try {
+            const snap = await getDoc(doc(db, COLLECTIONS.taxonomy, taxonomyId));
+            taxonomyById.set(taxonomyId, snap.exists() ? { id: snap.id, ...snap.data() } : null);
+        } catch {
+            taxonomyById.set(taxonomyId, null);
+        }
+    }
+}
+
 async function loadClassSections() {
     if (!currentUser) return;
     try {
@@ -475,6 +525,7 @@ async function loadSubmissionsForClassroom(classroomId) {
             snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
         }
         submissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
+        await loadQuestionMetadataForSubmissions(submissions);
         setStatus(`${submissions.length} submission${submissions.length === 1 ? '' : 's'} loaded`);
         render();
     } catch (error) {
@@ -1084,7 +1135,7 @@ function buildQuestionColumns(items) {
             const key = questionKeyForAnswer(answer, index);
             if (!key || seen.has(key)) return;
             seen.add(key);
-            const questionText = htmlToText(answer.promptHtml || answer.prompt || '').trim();
+            const questionText = questionTitleForAnswer(answer);
             columns.push({
                 key,
                 label: `Q${columns.length + 1}`,
@@ -1109,11 +1160,17 @@ function answerForQuestion(submission, questionKey) {
 function questionKeyForAnswer(answer, index) {
     if (!answer) return '';
     if (answer.questionId) return `id:${answer.questionId}`;
-    const prompt = htmlToText(answer.promptHtml || answer.prompt || '').trim().replace(/\s+/g, ' ');
+    const question = questionMetadataForAnswer(answer);
+    const prompt = htmlToText(question?.promptHtml || answer.promptHtml || answer.prompt || '').trim().replace(/\s+/g, ' ');
     const correct = String(answer.correctAnswer || answer.expectedAnswer || '').trim().replace(/\s+/g, ' ');
-    const type = String(answer.type || '').trim();
+    const type = String(question?.type || answer.type || '').trim();
     if (prompt || correct || type) return `sig:${type}::${prompt}::${correct}`;
     return `position:${index}`;
+}
+
+function questionTitleForAnswer(answer) {
+    const question = questionMetadataForAnswer(answer);
+    return htmlToText(question?.promptHtml || answer?.promptHtml || answer?.prompt || '').trim();
 }
 
 function studentTopicSummary(submission) {
@@ -1246,7 +1303,8 @@ function matchesQuestionTypeFilter(answer) {
 }
 
 function normalizedQuestionType(answer) {
-    const type = String(answer?.type || '').toLowerCase().replace(/[\s-]+/g, '_');
+    const question = questionMetadataForAnswer(answer);
+    const type = String(question?.type || answer?.type || '').toLowerCase().replace(/[\s-]+/g, '_');
     if (type.includes('true') || type.includes('false')) return 'true_false';
     if (type.includes('short')) return 'short_answer';
     if (type.includes('fib') || type.includes('fill') || type.includes('blank')) return 'fib';
@@ -1255,6 +1313,9 @@ function normalizedQuestionType(answer) {
 }
 
 function topicLabelForAnswer(answer, submission) {
+    const question = questionMetadataForAnswer(answer);
+    const taxonomyLabel = taxonomyPathLabel(question);
+    if (taxonomyLabel) return taxonomyLabel;
     const answerTopics = [
         answer?.topic,
         answer?.topicName,
@@ -1267,6 +1328,19 @@ function topicLabelForAnswer(answer, submission) {
     const chapters = Array.isArray(submission.chapters) ? submission.chapters.filter(Boolean).join(', ') : '';
     const subject = submission.subject || '';
     return [subject, chapters].filter(Boolean).join(' / ') || 'Unmapped';
+}
+
+function questionMetadataForAnswer(answer) {
+    if (!answer?.questionId) return null;
+    return questionMetadataById.get(answer.questionId) || null;
+}
+
+function taxonomyPathLabel(question) {
+    if (!question) return '';
+    const labels = [question.subjectId, question.chapterId, question.topicId]
+        .map(id => taxonomyById.get(id)?.label)
+        .filter(Boolean);
+    return labels.join(' / ');
 }
 
 function percentLabel(count, total) {
