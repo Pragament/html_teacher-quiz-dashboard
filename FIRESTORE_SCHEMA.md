@@ -63,9 +63,9 @@ Important fields:
 - `sectionId` - links the quiz session to a class section.
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
-- `classId` - optional `qb_taxonomy_v1` class node ID selected in the quiz session editor.
-- `subjectId` - optional `qb_taxonomy_v1` subject node ID selected in the quiz session editor.
-- `chapterId` - optional `qb_taxonomy_v1` chapter node ID selected in the quiz session editor.
+- `classId` - optional `qb_taxonomy_v1` class node ID selected in the quiz session form.
+- `subjectId` - optional `qb_taxonomy_v1` subject node ID selected in the quiz session form.
+- `chapterId` - optional `qb_taxonomy_v1` chapter node ID selected in the quiz session form.
 - `randomQuestionTypeCounts` - optional per-type limits for randomly picking questions from the selected question list. Missing or empty means use all questions.
 - `studentDifficultyLevels` - optional admission-number keyed difficulty overrides. Missing student entries use the quiz session default question selection.
 - `archived` - optional soft archive flag. Teachers can archive and unarchive quiz sessions they created.

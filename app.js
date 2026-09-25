@@ -275,6 +275,7 @@ function bindEvents() {
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
     els.editTaxonomyClassId.addEventListener('change', () => renderQuizSessionTaxonomyFields());
     els.editTaxonomySubjectId.addEventListener('change', () => renderQuizSessionTaxonomyFields());
+    els.editTaxonomyChapterId.addEventListener('change', updateCreateQuizSessionName);
     $('skipStudentDifficultyBtn').addEventListener('click', () => els.studentDifficultyDialog.close());
     $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
     els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
@@ -775,6 +776,7 @@ async function openClassroomCreator(options = {}) {
     els.editClassroomTitle.textContent = 'Create Quiz Session';
     els.editClassroomId.value = '';
     els.editClassroomName.value = '';
+    els.editClassroomName.disabled = true;
     els.editClassCode.value = await generateUniqueClassCode();
     renderSectionOptions();
     els.editClassEnabled.checked = true;
@@ -783,7 +785,9 @@ async function openClassroomCreator(options = {}) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = '';
-    renderQuizSessionTaxonomyFields();
+    setQuizSessionTaxonomyFieldsVisible(true);
+    renderQuizSessionTaxonomyFields({ classId: '', subjectId: '', chapterId: '' });
+    updateCreateQuizSessionName();
     setQuestionTypePickFields();
     els.saveClassroomBtn.textContent = 'Create Quiz Session';
     if (modal) els.classroomDialog.showModal();
@@ -829,6 +833,7 @@ function renderQuizSessionTaxonomyFields(selection = {}) {
     const chapterId = chapterNodes.some(node => node.id === requestedChapterId) ? requestedChapterId : '';
     els.editTaxonomyChapterId.innerHTML = taxonomySelectOptions('No chapter taxonomy', chapterNodes);
     els.editTaxonomyChapterId.value = chapterId;
+    updateCreateQuizSessionName();
 }
 
 function taxonomySelectOptions(blankLabel, nodes) {
@@ -858,12 +863,30 @@ function applyQuizSessionTaxonomyToValues(target, taxonomy) {
     });
 }
 
+function setQuizSessionTaxonomyFieldsVisible(visible) {
+    els.editClassroomForm.querySelectorAll('.taxonomy-field').forEach(field => {
+        field.hidden = !visible;
+    });
+    [els.editTaxonomyClassId, els.editTaxonomySubjectId, els.editTaxonomyChapterId].forEach(select => {
+        select.disabled = !visible;
+    });
+}
+
+function updateCreateQuizSessionName() {
+    if (els.editClassroomId.value) return;
+    const labels = [els.editTaxonomyClassId, els.editTaxonomySubjectId, els.editTaxonomyChapterId]
+        .map(select => select.selectedOptions[0]?.textContent || '')
+        .filter(label => label && !label.startsWith('No '));
+    els.editClassroomName.value = labels.join(' - ');
+}
+
 function openClassroomEditor(classroomId) {
     const classroom = findClassroom(classroomId);
     if (!classroom) return;
     els.editClassroomTitle.textContent = `Edit Quiz Session: ${classroom.className || classroom.classCode || classroom.id}`;
     els.editClassroomId.value = classroom.id;
     els.editClassroomName.value = classroom.className || '';
+    els.editClassroomName.disabled = false;
     els.editClassCode.value = classroom.classCode || '';
     renderSectionOptions(classroom.sectionId, classroom.sectionName);
     els.editClassEnabled.checked = classroom.classEnabled === true;
@@ -872,6 +895,7 @@ function openClassroomEditor(classroomId) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = classroom.questionBankListId || '';
+    setQuizSessionTaxonomyFieldsVisible(true);
     renderQuizSessionTaxonomyFields({
         classId: classroom.classId || '',
         subjectId: classroom.subjectId || '',
