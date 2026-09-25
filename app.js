@@ -1927,13 +1927,18 @@ function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {
     const question = htmlToText(answer.promptHtml || answer.prompt || '').trim();
     const correctAnswer = answer.correctAnswer || answer.expectedAnswer || '';
     const answerSourceInstruction = useAiAnswer
-        ? 'Use AI answer: infer the expected answer only from the question, then mark against it.'
-        : 'Use teacher answer: mark only against the provided teacher correct answer.';
+        ? 'Use AI answer: infer the expected answer and required parts from the question, including proof/work when requested.'
+        : 'Use teacher answer: mark against the provided teacher answer and the explicit requirements in the question text.';
     return [
         'Return only compact JSON. One review per supplied student.',
-        'Marks: 0-4. Full=4, partial=1-3, wrong/irrelevant=0.',
-        'Judge meaning, not keyword presence. Use exact student response only; do not correct or assume it.',
-        'Reason must be short and include: why marks were given; correct English sentence formation.',
+        'Marks: 0-4. Full=4 only when the response satisfies every requested part of the question.',
+        'Partial=1-3 for partially correct/incomplete responses; wrong/irrelevant=0.',
+        'If the question asks to prove, derive, show working, justify, explain, or give steps, a response that only states the result/theorem is incomplete and must lose marks.',
+        'Judge meaning, not keyword presence. Use exact student response only; do not correct or assume missing work.',
+        'Reason must be short and include why marks were given or lost.',
+        'When useful, include "Language correction: ..." as a corrected English version of the student response only.',
+        'Do not present the language correction as the full correct answer, proof, or model solution.',
+        'If proof/work is missing, explicitly say the language correction is not a complete answer.',
         'Do not invent answers, students, marks, or reasons.',
         answerSourceInstruction,
         '',
@@ -1941,7 +1946,7 @@ function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {
         `Question: ${question || 'No prompt text'}`,
         `Teacher answer: ${correctAnswer || 'missing'}`,
         '',
-        `JSON shape: {"reviews":[{"submissionId":"string","marks":0,"reason":"short reason; Correct sentence: ..."}]}`,
+        `JSON shape: {"reviews":[{"submissionId":"string","marks":0,"reason":"short reason. Language correction: ..."}]}`,
         `Students JSON: ${JSON.stringify(rows)}`
     ].join('\n');
 }
