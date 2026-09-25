@@ -540,6 +540,7 @@ button {
 
 .segmented-control {
     display: inline-flex;
+    flex-wrap: wrap;
     overflow: hidden;
     border: 1px solid var(--line);
     border-radius: 7px;
@@ -674,6 +675,27 @@ button {
     color: #fff;
 }
 
+.analysis-table {
+    min-width: 980px;
+}
+
+.analysis-table th,
+.analysis-table td {
+    height: auto;
+    min-height: 42px;
+}
+
+.analysis-table .analysis-text-cell {
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+}
+
+.question-analysis-table {
+    min-width: 1120px;
+}
+
 .table-link {
     width: 100%;
     border: 0;
@@ -683,6 +705,12 @@ button {
     font-size: 12px;
     font-weight: 800;
     text-transform: uppercase;
+}
+
+.question-analysis-link {
+    text-align: left;
+    text-transform: none;
+    line-height: 1.35;
 }
 
 .question-modal {
