@@ -98,6 +98,12 @@ let aiReviews = loadAiReviews();
 let aiReviewInFlight = false;
 let selectedAiReviewKeys = new Set();
 let activeStudentReport = null;
+let studentReportSort = {
+    subjects: { key: 'subject', direction: 'asc' },
+    types: { key: 'avg', direction: 'asc' },
+    topics: { key: 'avg', direction: 'asc' },
+    recent: { key: 'date', direction: 'desc' }
+};
 let difficultySession = null;
 let difficultyStudents = [];
 let difficultySubmissionHistory = [];
@@ -260,6 +266,7 @@ function bindEvents() {
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
     $('closeStudentReportBtn').addEventListener('click', () => els.studentReportDialog.close());
     els.studentReportSubjectFilter.addEventListener('change', renderStudentReport);
+    els.studentReportDialog.addEventListener('click', handleStudentReportSortClick);
     $('closeQuestionBtn').addEventListener('click', () => els.questionDialog.close());
     $('cancelGeminiBtn').addEventListener('click', () => els.geminiDialog.close());
     els.geminiKeyForm.addEventListener('submit', saveGeminiKey);
@@ -1942,66 +1949,104 @@ function studentReportTrendHtml(items) {
 }
 
 function studentReportSubjectTableHtml(items) {
-    const rows = Array.from(studentReportSubjectStats(items).values()).sort((a, b) => compareText(a.subject, b.subject));
-    return studentReportSimpleTable('Subject Summary', ['Subject', 'Sessions', 'Avg', 'Best', 'Pending'], rows.map(row => [
-        row.subject,
-        row.sessions,
-        `${row.avgPercent}%`,
-        `${row.bestPercent}%`,
-        row.pending
-    ]));
+    const rows = Array.from(studentReportSubjectStats(items).values());
+    return studentReportSimpleTable('Subject Summary', 'subjects', [
+        { key: 'subject', label: 'Subject', value: row => row.subject },
+        { key: 'sessions', label: 'Sessions', value: row => row.sessions },
+        { key: 'avg', label: 'Avg', value: row => `${row.avgPercent}%`, sortValue: row => row.avgPercent },
+        { key: 'best', label: 'Best', value: row => `${row.bestPercent}%`, sortValue: row => row.bestPercent },
+        { key: 'pending', label: 'Pending', value: row => row.pending }
+    ], rows);
 }
 
 function studentReportTypeTableHtml(items) {
-    const rows = Array.from(studentReportTypeStats(items).values()).sort((a, b) => a.avgPercent - b.avgPercent);
-    return studentReportSimpleTable('Question Type Breakdown', ['Type', 'Attempted', 'Avg', 'Correct', 'Pending'], rows.map(row => [
-        questionTypeLabel(row.type),
-        row.attempted,
-        `${row.avgPercent}%`,
-        percentLabel(row.correct, row.total),
-        row.pending
-    ]));
+    const rows = Array.from(studentReportTypeStats(items).values());
+    return studentReportSimpleTable('Question Type Breakdown', 'types', [
+        { key: 'type', label: 'Type', value: row => questionTypeLabel(row.type) },
+        { key: 'attempted', label: 'Attempted', value: row => row.attempted },
+        { key: 'avg', label: 'Avg', value: row => `${row.avgPercent}%`, sortValue: row => row.avgPercent },
+        { key: 'correct', label: 'Correct', value: row => percentLabel(row.correct, row.total), sortValue: row => percentValue(row.correct, row.total) },
+        { key: 'pending', label: 'Pending', value: row => row.pending }
+    ], rows);
 }
 
 function studentReportTopicTableHtml(items) {
-    const rows = Array.from(studentReportTopicStats(items).values()).sort((a, b) => a.avgPercent - b.avgPercent || compareText(a.label, b.label));
-    return studentReportSimpleTable('Topic / Chapter Mastery', ['Topic', 'Attempted', 'Avg', 'Difficulty Mix', 'Status'], rows.map(row => [
-        row.label,
-        row.attempted,
-        `${row.avgPercent}%`,
-        difficultyMixLabel(row.difficulties),
-        masteryStatus(row)
-    ]));
+    const rows = Array.from(studentReportTopicStats(items).values());
+    return studentReportSimpleTable('Topic / Chapter Mastery', 'topics', [
+        { key: 'topic', label: 'Topic', value: row => row.label },
+        { key: 'attempted', label: 'Attempted', value: row => row.attempted },
+        { key: 'avg', label: 'Avg', value: row => `${row.avgPercent}%`, sortValue: row => row.avgPercent },
+        { key: 'difficulty', label: 'Difficulty Mix', value: row => difficultyMixLabel(row.difficulties) },
+        { key: 'status', label: 'Status', value: row => masteryStatus(row), sortValue: row => masteryStatusRank(row) }
+    ], rows);
 }
 
 function studentReportRecentTableHtml(items) {
-    const rows = items.slice(0, 12).map(submission => [
-        formatDate(submission.submittedAtMillis) || '-',
-        quizSessionLabel(submission),
-        submission.subject || 'Any subject',
-        scoreLabel(submission),
-        manualCount(submission)
-    ]);
-    return studentReportSimpleTable('Recent Submissions', ['Date', 'Quiz Session', 'Subject', 'Score', 'Review'], rows);
+    return studentReportSimpleTable('Recent Submissions', 'recent', [
+        { key: 'date', label: 'Date', value: row => formatDate(row.submittedAtMillis) || '-', sortValue: row => row.submittedAtMillis || 0 },
+        { key: 'session', label: 'Quiz Session', value: row => quizSessionLabel(row) },
+        { key: 'subject', label: 'Subject', value: row => row.subject || 'Any subject' },
+        { key: 'score', label: 'Score', value: row => scoreLabel(row), sortValue: row => scorePercent(row) },
+        { key: 'review', label: 'Review', value: row => manualCount(row), sortValue: row => manualCount(row) }
+    ], items, { limit: 12 });
 }
 
-function studentReportSimpleTable(title, headers, rows) {
+function studentReportSimpleTable(title, tableKey, columns, rows, options = {}) {
     if (!rows.length) return `<h3>${esc(title)}</h3><div class="empty-card">No data available.</div>`;
+    const sortedRows = sortedStudentReportRows(tableKey, columns, rows).slice(0, options.limit || rows.length);
     return `
         <h3>${esc(title)}</h3>
         <div class="student-report-table-wrap">
             <table class="student-report-table">
                 <thead>
-                    <tr>${headers.map(header => `<th scope="col">${esc(header)}</th>`).join('')}</tr>
+                    <tr>${columns.map(column => `<th scope="col">${studentReportSortHeader(tableKey, column)}</th>`).join('')}</tr>
                 </thead>
                 <tbody>
-                    ${rows.map(row => `
-                        <tr>${row.map((cell, index) => `${index === 0 ? '<th scope="row">' : '<td>'}${esc(cell)}${index === 0 ? '</th>' : '</td>'}`).join('')}</tr>
+                    ${sortedRows.map(row => `
+                        <tr>${columns.map((column, index) => {
+                            const tag = index === 0 ? 'th scope="row"' : 'td';
+                            return `<${tag}>${esc(column.value(row))}</${index === 0 ? 'th' : 'td'}>`;
+                        }).join('')}</tr>
                     `).join('')}
                 </tbody>
             </table>
         </div>
     `;
+}
+
+function sortedStudentReportRows(tableKey, columns, rows) {
+    const sort = studentReportSort[tableKey];
+    const column = columns.find(item => item.key === sort?.key) || columns[0];
+    const valueForSort = column.sortValue || column.value;
+    return [...rows].sort((a, b) => {
+        const aValue = valueForSort(a);
+        const bValue = valueForSort(b);
+        const result = typeof aValue === 'number' && typeof bValue === 'number'
+            ? aValue - bValue
+            : compareText(aValue, bValue);
+        return sort?.direction === 'desc' ? -result : result;
+    });
+}
+
+function studentReportSortHeader(tableKey, column) {
+    const sort = studentReportSort[tableKey];
+    const active = sort?.key === column.key;
+    const direction = active ? sort.direction === 'asc' ? 'ASC' : 'DESC' : 'SORT';
+    return `<button class="sort-head-btn ${active ? 'active' : ''}" type="button" data-student-report-table="${esc(tableKey)}" data-student-report-sort="${esc(column.key)}">${esc(column.label)} <span>${direction}</span></button>`;
+}
+
+function handleStudentReportSortClick(event) {
+    const button = event.target.closest('[data-student-report-sort]');
+    if (!button) return;
+    const tableKey = button.dataset.studentReportTable;
+    const key = button.dataset.studentReportSort;
+    if (!tableKey || !key) return;
+    const current = studentReportSort[tableKey] || { key: '', direction: 'asc' };
+    const defaultDirection = ['sessions', 'attempted', 'avg', 'best', 'correct', 'pending', 'date', 'score', 'review'].includes(key) ? 'desc' : 'asc';
+    studentReportSort[tableKey] = current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: defaultDirection };
+    renderStudentReport();
 }
 
 function studentReportSubjectStats(items) {
@@ -2070,6 +2115,14 @@ function masteryStatus(row) {
     if (row.avgPercent >= 75) return 'Strong';
     if (row.avgPercent >= 50) return 'Watch';
     return 'Needs Practice';
+}
+
+function masteryStatusRank(row) {
+    const status = masteryStatus(row);
+    if (status === 'Needs Practice') return 0;
+    if (status === 'Watch') return 1;
+    if (status === 'Strong') return 2;
+    return 3;
 }
 
 function quizSessionLabel(submission) {
