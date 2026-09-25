@@ -6,14 +6,14 @@
     <title>Teacher Quiz Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/introjs.min.css" />
-    <link rel="stylesheet" href="styles.css?v=2026.09.25-2" />
+    <link rel="stylesheet" href="styles.css?v=2026.09.25-3" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/intro.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
-    <div class="app-version" aria-label="App version">v2026.09.25-2</div>
+    <div class="app-version" aria-label="App version">v2026.09.25-3</div>
 
     <header class="topbar" id="topbar" hidden>
         <div>
@@ -131,6 +131,16 @@
                     <label class="field">
                         <span>Chapter</span>
                         <input id="chapterFilter" placeholder="Any chapter" />
+                    </label>
+                    <label class="field">
+                        <span>Question Type</span>
+                        <select id="questionTypeFilter">
+                            <option value="">Any</option>
+                            <option value="mcq">MCQ</option>
+                            <option value="fib">FIB</option>
+                            <option value="short_answer">Short answer</option>
+                            <option value="true_false">True/False</option>
+                        </select>
                     </label>
                     <label class="field">
                         <span>Result</span>
@@ -343,6 +353,6 @@
     </dialog>
 
     <div id="toast" class="toast"></div>
-    <script type="module" src="app.js?v=2026.09.25-2"></script>
+    <script type="module" src="app.js?v=2026.09.25-3"></script>
 </body>
 </html>

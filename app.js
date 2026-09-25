@@ -81,6 +81,11 @@ let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'students';
 let submissionSort = { key: 'score', direction: 'desc' };
+let analysisSort = {
+    students: { key: 'score', direction: 'desc' },
+    topics: { key: 'avg', direction: 'asc' },
+    questions: { key: 'avg', direction: 'asc' }
+};
 let showArchivedClassrooms = false;
 let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
@@ -174,7 +179,7 @@ const els = {
     toast: $('toast')
 };
 
-const filterIds = ['classroomSearch', 'studentSearch', 'subjectFilter', 'chapterFilter', 'resultFilter'];
+const filterIds = ['classroomSearch', 'studentSearch', 'subjectFilter', 'chapterFilter', 'questionTypeFilter', 'resultFilter'];
 
 if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
@@ -904,6 +909,9 @@ function renderSubmissions() {
     document.querySelectorAll('[data-submission-sort]').forEach(btn => {
         btn.addEventListener('click', () => setSubmissionSort(btn.dataset.submissionSort));
     });
+    document.querySelectorAll('[data-analysis-sort]').forEach(btn => {
+        btn.addEventListener('click', () => setAnalysisSort(btn.dataset.analysisSort));
+    });
 }
 
 function renderSubmissionView(items) {
@@ -955,22 +963,22 @@ function submissionTable(items) {
 }
 
 function studentAnalysisTable(items) {
+    const rows = sortedStudentAnalysisRows(items);
     return `
         <table class="submission-table analysis-table">
             <thead>
                 <tr>
-                    <th scope="col">${sortHeader('Student', 'student')}</th>
-                    <th scope="col">${sortHeader('Roll', 'roll')}</th>
-                    <th scope="col">${sortHeader('Score', 'score')}</th>
-                    <th scope="col">Attempted</th>
-                    <th scope="col">${sortHeader('Review', 'review')}</th>
+                    <th scope="col">${analysisSortHeader('Student', 'student')}</th>
+                    <th scope="col">${analysisSortHeader('Roll', 'roll')}</th>
+                    <th scope="col">${analysisSortHeader('Score', 'score')}</th>
+                    <th scope="col">${analysisSortHeader('Attempted', 'attempted')}</th>
+                    <th scope="col">${analysisSortHeader('Review', 'review')}</th>
                     <th scope="col">Strong Topics</th>
                     <th scope="col">Weak Topics</th>
                 </tr>
             </thead>
             <tbody>
-                ${items.map(submission => {
-                    const summary = studentTopicSummary(submission);
+                ${rows.map(({ submission, summary }) => {
                     return `
                         <tr>
                             <th scope="row">
@@ -992,25 +1000,27 @@ function studentAnalysisTable(items) {
 
 function topicAnalysisTable(items) {
     const topics = Array.from(topicStats(items).values())
-        .sort((a, b) => a.avgPercent - b.avgPercent || b.attempted - a.attempted || compareText(a.label, b.label));
+        .sort(compareTopicRows);
     return `
         <table class="submission-table analysis-table">
             <thead>
                 <tr>
-                    <th scope="col">Topic</th>
-                    <th scope="col">Students</th>
-                    <th scope="col">Answers</th>
-                    <th scope="col">Avg</th>
-                    <th scope="col">Correct</th>
-                    <th scope="col">Partial</th>
-                    <th scope="col">Wrong</th>
-                    <th scope="col">Needs Review</th>
+                    <th scope="col">${analysisSortHeader('Topic', 'topic')}</th>
+                    <th scope="col">${analysisSortHeader('Question Type', 'type')}</th>
+                    <th scope="col">${analysisSortHeader('Students', 'students')}</th>
+                    <th scope="col">${analysisSortHeader('Answers', 'answers')}</th>
+                    <th scope="col">${analysisSortHeader('Avg', 'avg')}</th>
+                    <th scope="col">${analysisSortHeader('Correct', 'correct')}</th>
+                    <th scope="col">${analysisSortHeader('Partial', 'partial')}</th>
+                    <th scope="col">${analysisSortHeader('Wrong', 'wrong')}</th>
+                    <th scope="col">${analysisSortHeader('Needs Review', 'pending')}</th>
                 </tr>
             </thead>
             <tbody>
                 ${topics.map(topic => `
                     <tr>
                         <th scope="row" class="analysis-text-cell">${esc(topic.label)}</th>
+                        <td>${esc(questionTypeLabel(topic.type || 'mixed'))}</td>
                         <td>${topic.students.size}</td>
                         <td>${topic.total}</td>
                         <td>${topic.avgPercent}%</td>
@@ -1028,19 +1038,20 @@ function topicAnalysisTable(items) {
 function questionAnalysisTable(items) {
     const columns = buildQuestionColumns(items);
     const rows = columns.map(column => questionColumnStats(items, column))
-        .sort((a, b) => a.avgPercent - b.avgPercent || b.seenBy - a.seenBy || compareText(a.label, b.label));
+        .sort(compareQuestionRows);
     return `
         <table class="submission-table analysis-table question-analysis-table">
             <thead>
                 <tr>
-                    <th scope="col">Question</th>
-                    <th scope="col">Topic</th>
-                    <th scope="col">Seen By</th>
-                    <th scope="col">Avg</th>
-                    <th scope="col">Correct</th>
-                    <th scope="col">Partial</th>
-                    <th scope="col">Wrong</th>
-                    <th scope="col">Needs Review</th>
+                    <th scope="col">${analysisSortHeader('Question', 'question')}</th>
+                    <th scope="col">${analysisSortHeader('Question Type', 'type')}</th>
+                    <th scope="col">${analysisSortHeader('Topic', 'topic')}</th>
+                    <th scope="col">${analysisSortHeader('Seen By', 'seen')}</th>
+                    <th scope="col">${analysisSortHeader('Avg', 'avg')}</th>
+                    <th scope="col">${analysisSortHeader('Correct', 'correct')}</th>
+                    <th scope="col">${analysisSortHeader('Partial', 'partial')}</th>
+                    <th scope="col">${analysisSortHeader('Wrong', 'wrong')}</th>
+                    <th scope="col">${analysisSortHeader('Needs Review', 'pending')}</th>
                 </tr>
             </thead>
             <tbody>
@@ -1049,6 +1060,7 @@ function questionAnalysisTable(items) {
                         <th scope="row" class="analysis-text-cell">
                             <button class="table-link question-analysis-link" type="button" data-question-key="${esc(row.key)}" title="${esc(row.title)}">${esc(row.title)}</button>
                         </th>
+                        <td>${esc(questionTypeLabel(row.type || 'unknown'))}</td>
                         <td class="analysis-text-cell">${esc(row.topic)}</td>
                         <td>${row.seenBy}</td>
                         <td>${row.avgPercent}%</td>
@@ -1068,6 +1080,7 @@ function buildQuestionColumns(items) {
     const seen = new Set();
     items.forEach(submission => {
         (submission.answers || []).forEach((answer, index) => {
+            if (!matchesQuestionTypeFilter(answer)) return;
             const key = questionKeyForAnswer(answer, index);
             if (!key || seen.has(key)) return;
             seen.add(key);
@@ -1084,7 +1097,9 @@ function buildQuestionColumns(items) {
 
 function answerForQuestion(submission, questionKey) {
     const answers = submission.answers || [];
-    const index = answers.findIndex((answer, answerIndex) => questionKeyForAnswer(answer, answerIndex) === questionKey);
+    const index = answers.findIndex((answer, answerIndex) => {
+        return matchesQuestionTypeFilter(answer) && questionKeyForAnswer(answer, answerIndex) === questionKey;
+    });
     return {
         answer: index === -1 ? null : answers[index],
         index
@@ -1103,10 +1118,11 @@ function questionKeyForAnswer(answer, index) {
 
 function studentTopicSummary(submission) {
     const topics = new Map();
-    const answers = submission.answers || [];
-    answers.forEach((answer, index) => {
+    const answers = answersMatchingQuestionType(submission);
+    answers.forEach(({ answer, index }) => {
         const label = topicLabelForAnswer(answer, submission);
-        const stats = ensureTopicStats(topics, label);
+        const type = normalizedQuestionType(answer);
+        const stats = ensureTopicStats(topics, `${label}::${type}`, label, type);
         addAnswerToStats(stats, submission, answer, index);
     });
     const topicRows = Array.from(topics.values()).map(stats => ({
@@ -1116,7 +1132,7 @@ function studentTopicSummary(submission) {
     })).filter(topic => topic.attempted > 0);
     return {
         total: answers.length,
-        attempted: answers.filter(answer => answerResponseText(answer)).length,
+        attempted: answers.filter(({ answer }) => answerResponseText(answer)).length,
         strongTopics: topicRows.filter(topic => topic.avg >= 75).sort((a, b) => b.avg - a.avg).slice(0, 3).map(topic => topic.label),
         weakTopics: topicRows.filter(topic => topic.avg < 50).sort((a, b) => a.avg - b.avg).slice(0, 3).map(topic => topic.label)
     };
@@ -1125,9 +1141,10 @@ function studentTopicSummary(submission) {
 function topicStats(items) {
     const topics = new Map();
     items.forEach(submission => {
-        (submission.answers || []).forEach((answer, index) => {
+        answersMatchingQuestionType(submission).forEach(({ answer, index }) => {
             const label = topicLabelForAnswer(answer, submission);
-            const stats = ensureTopicStats(topics, label);
+            const type = normalizedQuestionType(answer);
+            const stats = ensureTopicStats(topics, `${label}::${type}`, label, type);
             addAnswerToStats(stats, submission, answer, index);
         });
     });
@@ -1138,10 +1155,12 @@ function topicStats(items) {
 function questionColumnStats(items, column) {
     const stats = createAnalysisStats(column.title);
     let topic = '';
+    let type = '';
     items.forEach(submission => {
         const { answer, index } = answerForQuestion(submission, column.key);
         if (!answer) return;
         if (!topic) topic = topicLabelForAnswer(answer, submission);
+        if (!type) type = normalizedQuestionType(answer);
         addAnswerToStats(stats, submission, answer, index);
     });
     finalizeAnalysisStats(stats);
@@ -1150,6 +1169,7 @@ function questionColumnStats(items, column) {
         label: column.label,
         title: column.title,
         topic: topic || 'Unmapped',
+        type,
         seenBy: stats.students.size,
         total: stats.total,
         avgPercent: stats.avgPercent,
@@ -1160,9 +1180,13 @@ function questionColumnStats(items, column) {
     };
 }
 
-function ensureTopicStats(topics, label) {
-    if (!topics.has(label)) topics.set(label, createAnalysisStats(label));
-    return topics.get(label);
+function ensureTopicStats(topics, key, label, type) {
+    if (!topics.has(key)) {
+        const stats = createAnalysisStats(label);
+        stats.type = type;
+        topics.set(key, stats);
+    }
+    return topics.get(key);
 }
 
 function createAnalysisStats(label) {
@@ -1210,6 +1234,26 @@ function answerMarks(submission, answer, index) {
     return null;
 }
 
+function answersMatchingQuestionType(submission) {
+    return (submission.answers || [])
+        .map((answer, index) => ({ answer, index }))
+        .filter(({ answer }) => matchesQuestionTypeFilter(answer));
+}
+
+function matchesQuestionTypeFilter(answer) {
+    const selected = $('questionTypeFilter')?.value || '';
+    return !selected || normalizedQuestionType(answer) === selected;
+}
+
+function normalizedQuestionType(answer) {
+    const type = String(answer?.type || '').toLowerCase().replace(/[\s-]+/g, '_');
+    if (type.includes('true') || type.includes('false')) return 'true_false';
+    if (type.includes('short')) return 'short_answer';
+    if (type.includes('fib') || type.includes('fill') || type.includes('blank')) return 'fib';
+    if (type.includes('mcq') || type.includes('multiple') || type.includes('choice')) return 'mcq';
+    return type || 'unknown';
+}
+
 function topicLabelForAnswer(answer, submission) {
     const answerTopics = [
         answer?.topic,
@@ -1228,6 +1272,77 @@ function topicLabelForAnswer(answer, submission) {
 function percentLabel(count, total) {
     if (!total) return '0%';
     return `${Math.round((count / total) * 100)}%`;
+}
+
+function sortedStudentAnalysisRows(items) {
+    return items
+        .map(submission => ({ submission, summary: studentTopicSummary(submission) }))
+        .sort(compareStudentAnalysisRows);
+}
+
+function analysisSortHeader(label, key) {
+    const sort = analysisSort[submissionViewMode] || { key: '', direction: 'asc' };
+    const active = sort.key === key;
+    const direction = active ? sort.direction === 'asc' ? 'ASC' : 'DESC' : 'SORT';
+    return `<button class="sort-head-btn ${active ? 'active' : ''}" type="button" data-analysis-sort="${key}">${esc(label)} <span>${direction}</span></button>`;
+}
+
+function setAnalysisSort(key) {
+    const current = analysisSort[submissionViewMode] || { key: '', direction: 'asc' };
+    const defaultDirection = ['avg', 'score', 'students', 'answers', 'seen', 'correct', 'partial', 'wrong', 'pending', 'review', 'attempted'].includes(key) ? 'desc' : 'asc';
+    analysisSort[submissionViewMode] = current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: defaultDirection };
+    renderSubmissions();
+}
+
+function compareStudentAnalysisRows(a, b) {
+    const sort = analysisSort.students;
+    let result = 0;
+    if (sort.key === 'student') result = compareText(a.submission.studentName || 'Student', b.submission.studentName || 'Student');
+    else if (sort.key === 'roll') result = compareText(a.submission.admissionNo || '', b.submission.admissionNo || '');
+    else if (sort.key === 'attempted') result = a.summary.attempted - b.summary.attempted;
+    else if (sort.key === 'review') result = manualCount(a.submission) - manualCount(b.submission);
+    else {
+        const aScore = scoreDetails(a.submission);
+        const bScore = scoreDetails(b.submission);
+        result = aScore.percent - bScore.percent || aScore.earnedMarks - bScore.earnedMarks;
+    }
+    return sort.direction === 'asc' ? result : -result;
+}
+
+function compareTopicRows(a, b) {
+    const sort = analysisSort.topics;
+    let result = 0;
+    if (sort.key === 'topic') result = compareText(a.label, b.label);
+    else if (sort.key === 'type') result = compareText(questionTypeLabel(a.type || 'mixed'), questionTypeLabel(b.type || 'mixed'));
+    else if (sort.key === 'students') result = a.students.size - b.students.size;
+    else if (sort.key === 'answers') result = a.total - b.total;
+    else if (sort.key === 'correct') result = percentValue(a.correct, a.total) - percentValue(b.correct, b.total);
+    else if (sort.key === 'partial') result = percentValue(a.partial, a.total) - percentValue(b.partial, b.total);
+    else if (sort.key === 'wrong') result = percentValue(a.wrong, a.total) - percentValue(b.wrong, b.total);
+    else if (sort.key === 'pending') result = a.pending - b.pending;
+    else result = a.avgPercent - b.avgPercent;
+    return sort.direction === 'asc' ? result : -result;
+}
+
+function compareQuestionRows(a, b) {
+    const sort = analysisSort.questions;
+    let result = 0;
+    if (sort.key === 'question') result = compareText(a.title, b.title);
+    else if (sort.key === 'type') result = compareText(questionTypeLabel(a.type || 'unknown'), questionTypeLabel(b.type || 'unknown'));
+    else if (sort.key === 'topic') result = compareText(a.topic, b.topic);
+    else if (sort.key === 'seen') result = a.seenBy - b.seenBy;
+    else if (sort.key === 'correct') result = percentValue(a.correct, a.total) - percentValue(b.correct, b.total);
+    else if (sort.key === 'partial') result = percentValue(a.partial, a.total) - percentValue(b.partial, b.total);
+    else if (sort.key === 'wrong') result = percentValue(a.wrong, a.total) - percentValue(b.wrong, b.total);
+    else if (sort.key === 'pending') result = a.pending - b.pending;
+    else result = a.avgPercent - b.avgPercent;
+    return sort.direction === 'asc' ? result : -result;
+}
+
+function percentValue(count, total) {
+    return total ? count / total : 0;
 }
 
 function sortHeader(label, key) {
@@ -1386,10 +1501,12 @@ function filteredSubmissions() {
     const subject = $('subjectFilter').value.trim().toLowerCase();
     const chapter = $('chapterFilter').value.trim().toLowerCase();
     const result = $('resultFilter').value;
+    const questionType = $('questionTypeFilter').value;
     return submissions.filter(s => {
         if (student && ![s.studentName, s.admissionNo, s.studentKey].some(value => String(value || '').toLowerCase().includes(student))) return false;
         if (subject && !String(s.subject || '').toLowerCase().includes(subject)) return false;
         if (chapter && !(s.chapters || []).some(value => String(value || '').toLowerCase().includes(chapter))) return false;
+        if (questionType && !answersMatchingQuestionType(s).length) return false;
         if (result === 'passed' && scorePercent(s) < 50) return false;
         if (result === 'needs_review' && scorePercent(s) >= 50 && manualCount(s) === 0) return false;
         if (result === 'manual' && manualCount(s) === 0) return false;
@@ -2280,7 +2397,9 @@ function questionTypeLabel(type) {
         mcq: 'MCQ',
         fib: 'FIB',
         short_answer: 'Short answer',
-        true_false: 'True/False'
+        true_false: 'True/False',
+        mixed: 'Mixed',
+        unknown: 'Unknown'
     };
     return labels[type] || type;
 }
