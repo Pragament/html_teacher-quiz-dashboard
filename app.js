@@ -95,6 +95,7 @@ let showArchivedClassrooms = false;
 let activeQuestionReview = null;
 let aiReviews = loadAiReviews();
 let aiReviewInFlight = false;
+let selectedAiReviewKeys = new Set();
 let difficultySession = null;
 let difficultyStudents = [];
 let difficultySubmissionHistory = [];
@@ -141,6 +142,8 @@ const els = {
     questionResponseList: $('questionResponseList'),
     aiReviewBtn: $('aiReviewBtn'),
     saveAiReviewOverridesBtn: $('saveAiReviewOverridesBtn'),
+    selectAllAiReviewBtn: $('selectAllAiReviewBtn'),
+    clearAiReviewSelectionBtn: $('clearAiReviewSelectionBtn'),
     aiReviewStatus: $('aiReviewStatus'),
     useAiAnswerForReview: $('useAiAnswerForReview'),
     sortQuestionByMarksDesc: $('sortQuestionByMarksDesc'),
@@ -243,6 +246,9 @@ function bindEvents() {
     els.removeGeminiKeyBtn.addEventListener('click', removeGeminiKey);
     els.aiReviewBtn.addEventListener('click', reviewActiveQuestionWithGemini);
     els.saveAiReviewOverridesBtn.addEventListener('click', saveAiReviewOverrides);
+    els.selectAllAiReviewBtn.addEventListener('click', () => selectAllAiReviewRows(true));
+    els.clearAiReviewSelectionBtn.addEventListener('click', () => selectAllAiReviewRows(false));
+    els.questionResponseList.addEventListener('change', handleAiReviewSelectionChange);
     els.sortQuestionByMarksDesc.addEventListener('change', renderQuestionResponses);
     els.downloadQuestionPdfBtn.addEventListener('click', downloadQuestionPdfReport);
     $('skipTourBtn').addEventListener('click', skipTourPrompt);
@@ -1488,6 +1494,7 @@ function openQuestionDetail(questionKey) {
         </div>
     `;
     activeQuestionReview = { index: Number(column.label.replace('Q', '')) - 1, label: column.label, answer, responses };
+    initializeAiReviewSelection();
     updateAiReviewControls();
     renderQuestionResponses();
     renderRich(els.questionPrompt);
@@ -1496,22 +1503,25 @@ function openQuestionDetail(questionKey) {
 
 function updateAiReviewControls(message = '') {
     if (!activeQuestionReview) return;
-    const reviewable = reviewableResponsesForActiveQuestion().length;
+    const reviewable = reviewableResponsesForActiveQuestion({ pendingOnly: false }).length;
+    const selected = selectedAiReviewResponsesForActiveQuestion().length;
     const hasKey = !!loadGeminiKey();
     const aiReviewBtnLabel = els.aiReviewBtn.querySelector('.btn-label');
-    els.aiReviewBtn.disabled = aiReviewInFlight || reviewable === 0;
+    els.aiReviewBtn.disabled = aiReviewInFlight || selected === 0;
     els.aiReviewBtn.classList.toggle('is-loading', aiReviewInFlight);
     els.aiReviewBtn.setAttribute('aria-busy', String(aiReviewInFlight));
     if (aiReviewBtnLabel) {
         aiReviewBtnLabel.textContent = aiReviewInFlight ? 'Reviewing...' : 'Review With Gemini';
     }
     els.saveAiReviewOverridesBtn.disabled = reviewable === 0;
+    els.selectAllAiReviewBtn.disabled = aiReviewInFlight || reviewable === 0;
+    els.clearAiReviewSelectionBtn.disabled = aiReviewInFlight || selected === 0;
     if (message) {
         els.aiReviewStatus.textContent = message;
     } else if (!reviewable) {
         els.aiReviewStatus.textContent = 'Gemini review is available for FIB and short-answer questions only.';
     } else {
-        els.aiReviewStatus.textContent = `${reviewable} response${reviewable === 1 ? '' : 's'} ready for AI review. ${hasKey ? 'Gemini key saved.' : 'Add your Gemini key before reviewing.'}`;
+        els.aiReviewStatus.textContent = `${selected} of ${reviewable} response${reviewable === 1 ? '' : 's'} selected for AI review. ${hasKey ? 'Gemini key saved.' : 'Add your Gemini key before reviewing.'}`;
     }
 }
 
@@ -1524,8 +1534,13 @@ function renderQuestionResponses() {
         const reviewable = isReviewableAnswer(itemAnswer);
         const key = reviewKey(submission, itemAnswer, index);
         const review = getAiReview(submission, itemAnswer, index);
+        const selected = reviewable && selectedAiReviewKeys.has(key);
         return `
             <article class="question-response-row ai-response-row" data-review-key="${esc(key)}">
+                <label class="ai-select-cell" title="Select for Gemini review">
+                    <input class="ai-review-select" type="checkbox" ${selected ? 'checked' : ''} ${reviewable ? '' : 'disabled'} />
+                    <span>Select</span>
+                </label>
                 <div class="question-response-main">
                     <div>
                         <strong>${esc(submission.studentName || 'Student')}</strong>
@@ -1551,6 +1566,7 @@ function renderQuestionResponses() {
             </article>
         `;
     }).join('');
+    updateAiReviewControls();
 }
 
 function questionResponsesForDisplay() {
@@ -1761,7 +1777,7 @@ async function reviewActiveQuestionWithGemini() {
         return;
     }
 
-    const reviewableResponses = reviewableResponsesForActiveQuestion();
+    const reviewableResponses = selectedAiReviewResponsesForActiveQuestion();
     const rows = reviewableResponses
         .map(({ submission, answer }) => ({
             submissionId: submission.id,
@@ -1770,7 +1786,7 @@ async function reviewActiveQuestionWithGemini() {
             exactResponse: answerResponseText(answer)
         }));
     if (!rows.length) {
-        updateAiReviewControls('No FIB or short-answer responses found for this question.');
+        updateAiReviewControls('Select at least one unreviewed or reviewed response to send to Gemini.');
         return;
     }
 
@@ -1805,6 +1821,7 @@ async function reviewActiveQuestionWithGemini() {
         });
         const writeResults = await Promise.all(writes);
         const savedCount = writeResults.filter(Boolean).length;
+        selectedAiReviewKeys.clear();
         saveAiReviews();
         renderQuestionResponses();
         renderSelectedClassroom();
@@ -2038,9 +2055,51 @@ function isReviewableAnswer(answer) {
     return answer.shortAnswer !== undefined || Array.isArray(answer.fibAnswers);
 }
 
-function reviewableResponsesForActiveQuestion() {
+function initializeAiReviewSelection() {
+    selectedAiReviewKeys = new Set(
+        reviewableResponsesForActiveQuestion({ pendingOnly: true })
+            .map(({ submission, answer, index }) => reviewKey(submission, answer, index))
+            .filter(Boolean)
+    );
+}
+
+function selectedAiReviewResponsesForActiveQuestion() {
+    return reviewableResponsesForActiveQuestion({ pendingOnly: false }).filter(({ submission, answer, index }) => {
+        const key = reviewKey(submission, answer, index);
+        return key && selectedAiReviewKeys.has(key);
+    });
+}
+
+function selectAllAiReviewRows(shouldSelect) {
+    reviewableResponsesForActiveQuestion({ pendingOnly: false }).forEach(({ submission, answer, index }) => {
+        const key = reviewKey(submission, answer, index);
+        if (!key) return;
+        if (shouldSelect) {
+            selectedAiReviewKeys.add(key);
+        } else {
+            selectedAiReviewKeys.delete(key);
+        }
+    });
+    renderQuestionResponses();
+}
+
+function handleAiReviewSelectionChange(event) {
+    const checkbox = event.target.closest('.ai-review-select');
+    if (!checkbox) return;
+    const row = checkbox.closest('[data-review-key]');
+    const key = row?.dataset.reviewKey;
+    if (!key) return;
+    if (checkbox.checked) {
+        selectedAiReviewKeys.add(key);
+    } else {
+        selectedAiReviewKeys.delete(key);
+    }
+    updateAiReviewControls();
+}
+
+function reviewableResponsesForActiveQuestion(options = {}) {
     if (!activeQuestionReview) return [];
-    const pendingOnly = $('resultFilter').value === 'ai_pending';
+    const pendingOnly = options.pendingOnly ?? $('resultFilter').value === 'ai_pending';
     return activeQuestionReview.responses.filter(({ submission, answer, index }) => {
         if (!isReviewableAnswer(answer)) return false;
         if (!pendingOnly) return true;

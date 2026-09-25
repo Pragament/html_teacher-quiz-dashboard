@@ -815,8 +815,19 @@ button {
 }
 
 .ai-response-row {
-    grid-template-columns: minmax(260px, 1fr) 116px minmax(220px, 0.75fr);
+    grid-template-columns: 74px minmax(260px, 1fr) 116px minmax(220px, 0.75fr);
     align-items: start;
+}
+
+.ai-select-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 .ai-response-row .answer-pill {
@@ -1243,6 +1254,7 @@ button {
     .classroom-list,
     .section-list,
     .classroom-edit-grid,
+    .ai-response-row,
     .question-type-grid,
     .student-difficulty-tools,
     .student-difficulty-row,
