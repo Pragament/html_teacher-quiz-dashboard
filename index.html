@@ -6,14 +6,14 @@
     <title>Teacher Quiz Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/introjs.min.css" />
-    <link rel="stylesheet" href="styles.css?v=2026.09.25-7" />
+    <link rel="stylesheet" href="styles.css?v=2026.09.25-8" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/intro.js@7.2.0/minified/intro.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
-    <div class="app-version" aria-label="App version">v2026.09.25-7</div>
+    <div class="app-version" aria-label="App version">v2026.09.25-8</div>
 
     <header class="topbar" id="topbar" hidden>
         <div>
@@ -169,6 +169,35 @@
             </div>
             <div id="detailStats" class="stats-grid"></div>
             <div id="answerDetails" class="answer-details"></div>
+        </div>
+    </dialog>
+
+    <dialog id="studentReportDialog" class="modal student-report-modal">
+        <div class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <h2 id="studentReportTitle">Student Report</h2>
+                    <p id="studentReportMeta"></p>
+                </div>
+                <button class="btn" id="closeStudentReportBtn" type="button">Close</button>
+            </div>
+            <div class="student-report-tools">
+                <label class="field">
+                    <span>Subject</span>
+                    <select id="studentReportSubjectFilter">
+                        <option value="">All subjects</option>
+                    </select>
+                </label>
+            </div>
+            <div id="studentReportSummary" class="stats-grid"></div>
+            <div id="studentReportInsights" class="student-report-insights"></div>
+            <div id="studentReportTrend" class="student-report-section"></div>
+            <div class="student-report-grid">
+                <div id="studentReportSubjectTable" class="student-report-section"></div>
+                <div id="studentReportTypeTable" class="student-report-section"></div>
+            </div>
+            <div id="studentReportTopicTable" class="student-report-section"></div>
+            <div id="studentReportRecentTable" class="student-report-section"></div>
         </div>
     </dialog>
 
@@ -355,6 +384,6 @@
     </dialog>
 
     <div id="toast" class="toast"></div>
-    <script type="module" src="app.js?v=2026.09.25-7"></script>
+    <script type="module" src="app.js?v=2026.09.25-8"></script>
 </body>
 </html>
