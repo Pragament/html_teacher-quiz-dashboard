@@ -1505,7 +1505,7 @@ function updateAiReviewControls(message = '') {
     if (aiReviewBtnLabel) {
         aiReviewBtnLabel.textContent = aiReviewInFlight ? 'Reviewing...' : 'Review With Gemini';
     }
-    els.saveAiReviewOverridesBtn.disabled = activeQuestionReview.responses.length === 0;
+    els.saveAiReviewOverridesBtn.disabled = reviewable === 0;
     if (message) {
         els.aiReviewStatus.textContent = message;
     } else if (!reviewable) {
@@ -1556,7 +1556,7 @@ function renderQuestionResponses() {
 function questionResponsesForDisplay() {
     if (!activeQuestionReview) return [];
     const { responses } = activeQuestionReview;
-    const items = [...responses];
+    const items = responses.filter(({ answer }) => isReviewableAnswer(answer));
     if (!els.sortQuestionByMarksDesc.checked) return items;
     return items.sort((a, b) => {
         const aMarks = reviewMarksForSort(getAiReview(a.submission, a.answer, a.index));
