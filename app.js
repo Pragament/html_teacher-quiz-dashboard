@@ -79,6 +79,7 @@ let classSections = [];
 let sectionStudents = [];
 let sectionClassrooms = [];
 let questionBankLists = [];
+let taxonomyNodes = [];
 let questionMetadataById = new Map();
 let taxonomyById = new Map();
 let activeClassroomId = null;
@@ -182,6 +183,9 @@ const els = {
     editSectionId: $('editSectionId'),
     editClassEnabled: $('editClassEnabled'),
     editQuestionBankList: $('editQuestionBankList'),
+    editTaxonomyClassId: $('editTaxonomyClassId'),
+    editTaxonomySubjectId: $('editTaxonomySubjectId'),
+    editTaxonomyChapterId: $('editTaxonomyChapterId'),
     pickMcqCount: $('pickMcqCount'),
     pickFibCount: $('pickFibCount'),
     pickShortAnswerCount: $('pickShortAnswerCount'),
@@ -225,6 +229,7 @@ onAuthStateChanged(auth, async (user) => {
         sectionStudents = [];
         sectionClassrooms = [];
         questionBankLists = [];
+        taxonomyNodes = [];
         questionMetadataById = new Map();
         taxonomyById = new Map();
         submissions = [];
@@ -238,6 +243,7 @@ onAuthStateChanged(auth, async (user) => {
     els.teacherLabel.textContent = user.displayName || user.email || user.uid;
     await loadClassSections();
     await loadQuestionBankLists();
+    await loadQuizSessionTaxonomy();
     await loadClassrooms();
     promptGuidedTour();
 });
@@ -267,6 +273,8 @@ function bindEvents() {
     els.downloadQuestionPdfBtn.addEventListener('click', downloadQuestionPdfReport);
     $('skipTourBtn').addEventListener('click', skipTourPrompt);
     $('cancelClassroomEditBtn').addEventListener('click', () => els.classroomDialog.close());
+    els.editTaxonomyClassId.addEventListener('change', () => renderQuizSessionTaxonomyFields());
+    els.editTaxonomySubjectId.addEventListener('change', () => renderQuizSessionTaxonomyFields());
     $('skipStudentDifficultyBtn').addEventListener('click', () => els.studentDifficultyDialog.close());
     $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
     els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
@@ -391,6 +399,27 @@ async function loadQuestionBankLists() {
         questionBankLists = [];
         toast('Unable to load question lists');
     }
+}
+
+async function loadQuizSessionTaxonomy() {
+    try {
+        const snap = await getDocs(collection(db, COLLECTIONS.taxonomy));
+        taxonomyNodes = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(node => ['class', 'subject', 'chapter'].includes(node.type))
+            .sort(compareTaxonomyNodes);
+        taxonomyNodes.forEach(node => taxonomyById.set(node.id, node));
+    } catch (error) {
+        taxonomyNodes = [];
+        toast('Unable to load class/subject/chapter taxonomy');
+    }
+}
+
+function compareTaxonomyNodes(a, b) {
+    const typeOrder = { class: 0, subject: 1, chapter: 2, topic: 3 };
+    const typeDiff = (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9);
+    if (typeDiff) return typeDiff;
+    return compareText(a.label || a.id, b.label || b.id);
 }
 
 async function loadQuestionMetadataForSubmissions(items) {
@@ -583,6 +612,7 @@ function renderClassrooms() {
                     ${c.archived === true ? '<span>Archived</span>' : ''}
                 </span>
                 <span class="question-list-label">${esc(questionListName(c.questionBankListId))}</span>
+                ${quizSessionTaxonomyLabel(c) ? `<span class="question-list-label">${esc(quizSessionTaxonomyLabel(c))}</span>` : ''}
                 ${questionTypePickLabel(c.randomQuestionTypeCounts) ? `<span class="question-list-label">${esc(questionTypePickLabel(c.randomQuestionTypeCounts))}</span>` : ''}
                 ${studentDifficultyLabel(c.studentDifficultyLevels) ? `<span class="question-list-label">${esc(studentDifficultyLabel(c.studentDifficultyLevels))}</span>` : ''}
             </button>
@@ -707,6 +737,7 @@ function renderSections() {
                         <strong>${esc(classroom.className || classroom.classCode || classroom.id)}</strong>
                         <span>Session code ${esc(classroom.classCode || classroom.id)}</span>
                         <span>Date ${esc(formatQuizSessionDate(classroom))}</span>
+                        ${quizSessionTaxonomyLabel(classroom) ? `<span>${esc(quizSessionTaxonomyLabel(classroom))}</span>` : ''}
                         <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}${classroom.archived === true ? ' · Archived' : ''}</span>
                     </button>
                     <div class="section-classroom-actions">
@@ -752,6 +783,7 @@ async function openClassroomCreator(options = {}) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = '';
+    renderQuizSessionTaxonomyFields();
     setQuestionTypePickFields();
     els.saveClassroomBtn.textContent = 'Create Quiz Session';
     if (modal) els.classroomDialog.showModal();
@@ -770,6 +802,62 @@ function renderSectionOptions(selectedSectionId = '') {
     els.editSectionId.value = classSections.some(section => section.id === selectedSectionId) ? selectedSectionId : '';
 }
 
+function renderQuizSessionTaxonomyFields(selection = {}) {
+    const requestedClassId = selection.classId ?? els.editTaxonomyClassId.value;
+    const classNodes = taxonomyNodes.filter(node => node.type === 'class');
+    const classId = classNodes.some(node => node.id === requestedClassId) ? requestedClassId : '';
+    els.editTaxonomyClassId.innerHTML = taxonomySelectOptions('No class taxonomy', classNodes);
+    els.editTaxonomyClassId.value = classId;
+
+    const requestedSubjectId = selection.subjectId ?? els.editTaxonomySubjectId.value;
+    const subjectNodes = taxonomyNodes.filter(node => {
+        if (node.type !== 'subject') return false;
+        if (!classId) return true;
+        return node.classId === classId || node.parentId === classId;
+    });
+    const subjectId = subjectNodes.some(node => node.id === requestedSubjectId) ? requestedSubjectId : '';
+    els.editTaxonomySubjectId.innerHTML = taxonomySelectOptions('No subject taxonomy', subjectNodes);
+    els.editTaxonomySubjectId.value = subjectId;
+
+    const requestedChapterId = selection.chapterId ?? els.editTaxonomyChapterId.value;
+    const chapterNodes = taxonomyNodes.filter(node => {
+        if (node.type !== 'chapter') return false;
+        if (subjectId) return node.subjectId === subjectId || node.parentId === subjectId;
+        if (classId) return node.classId === classId;
+        return true;
+    });
+    const chapterId = chapterNodes.some(node => node.id === requestedChapterId) ? requestedChapterId : '';
+    els.editTaxonomyChapterId.innerHTML = taxonomySelectOptions('No chapter taxonomy', chapterNodes);
+    els.editTaxonomyChapterId.value = chapterId;
+}
+
+function taxonomySelectOptions(blankLabel, nodes) {
+    return `
+        <option value="">${esc(blankLabel)}</option>
+        ${nodes.map(node => `<option value="${esc(node.id)}">${esc(node.label || node.id)}</option>`).join('')}
+    `;
+}
+
+function selectedQuizSessionTaxonomy() {
+    return {
+        classId: els.editTaxonomyClassId.value || '',
+        subjectId: els.editTaxonomySubjectId.value || '',
+        chapterId: els.editTaxonomyChapterId.value || ''
+    };
+}
+
+function applyQuizSessionTaxonomyToUpdates(target, taxonomy) {
+    ['classId', 'subjectId', 'chapterId'].forEach(field => {
+        target[field] = taxonomy[field] || deleteField();
+    });
+}
+
+function applyQuizSessionTaxonomyToValues(target, taxonomy) {
+    ['classId', 'subjectId', 'chapterId'].forEach(field => {
+        if (taxonomy[field]) target[field] = taxonomy[field];
+    });
+}
+
 function openClassroomEditor(classroomId) {
     const classroom = findClassroom(classroomId);
     if (!classroom) return;
@@ -784,6 +872,11 @@ function openClassroomEditor(classroomId) {
         ${questionBankLists.map(list => `<option value="${esc(list.id)}">${esc(list.name || list.id)}</option>`).join('')}
     `;
     els.editQuestionBankList.value = classroom.questionBankListId || '';
+    renderQuizSessionTaxonomyFields({
+        classId: classroom.classId || '',
+        subjectId: classroom.subjectId || '',
+        chapterId: classroom.chapterId || ''
+    });
     setQuestionTypePickFields(classroom.randomQuestionTypeCounts);
     els.saveClassroomBtn.textContent = 'Save Quiz Session';
     els.classroomDialog.showModal();
@@ -797,6 +890,7 @@ async function saveClassroomEdit(event) {
     const questionBankListId = els.editQuestionBankList.value;
     const selectedList = questionBankLists.find(list => list.id === questionBankListId);
     const selectedSection = classSections.find(section => section.id === els.editSectionId.value);
+    const selectedTaxonomy = selectedQuizSessionTaxonomy();
     const className = els.editClassroomName.value.trim();
     const classCode = els.editClassCode.value.trim() || generateClassCode();
     const updates = {
@@ -816,6 +910,7 @@ async function saveClassroomEdit(event) {
     }
     if (selectedList) updates.questionBankListId = selectedList.id;
     else updates.questionBankListId = deleteField();
+    applyQuizSessionTaxonomyToUpdates(updates, selectedTaxonomy);
     const randomQuestionTypeCounts = readQuestionTypePickFields();
     if (randomQuestionTypeCounts) updates.randomQuestionTypeCounts = randomQuestionTypeCounts;
     else updates.randomQuestionTypeCounts = deleteField();
@@ -844,6 +939,7 @@ async function saveClassroomEdit(event) {
             createValues.sectionName = sectionLabel(selectedSection);
         }
         if (selectedList) createValues.questionBankListId = selectedList.id;
+        applyQuizSessionTaxonomyToValues(createValues, selectedTaxonomy);
         if (randomQuestionTypeCounts) createValues.randomQuestionTypeCounts = randomQuestionTypeCounts;
         const createdClassroom = await createClassroom(createValues, selectedList, selectedSection);
         if (createdClassroom) await maybeOpenStudentDifficultyDialog(createdClassroom, selectedSection);
@@ -857,7 +953,10 @@ async function saveClassroomEdit(event) {
             ...updates,
             sectionId: selectedSection?.id,
             sectionName: selectedSection ? sectionLabel(selectedSection) : undefined,
-            questionBankListId: selectedList?.id
+            questionBankListId: selectedList?.id,
+            classId: selectedTaxonomy.classId || undefined,
+            subjectId: selectedTaxonomy.subjectId || undefined,
+            chapterId: selectedTaxonomy.chapterId || undefined
         };
         if (!selectedSection) {
             delete updatedClassroom.sectionId;
@@ -865,6 +964,9 @@ async function saveClassroomEdit(event) {
             delete updatedClassroom.studentDifficultyLevels;
         }
         if (!selectedList) delete updatedClassroom.questionBankListId;
+        ['classId', 'subjectId', 'chapterId'].forEach(field => {
+            if (!selectedTaxonomy[field]) delete updatedClassroom[field];
+        });
         if (randomQuestionTypeCounts) updatedClassroom.randomQuestionTypeCounts = randomQuestionTypeCounts;
         else delete updatedClassroom.randomQuestionTypeCounts;
         syncClassroomState(updatedClassroom);
@@ -2558,6 +2660,13 @@ function questionListName(questionBankListId) {
     if (!questionBankListId) return 'No question list';
     const list = questionBankLists.find(item => item.id === questionBankListId);
     return list?.name || questionBankListId;
+}
+
+function quizSessionTaxonomyLabel(classroom) {
+    return [classroom?.classId, classroom?.subjectId, classroom?.chapterId]
+        .map(id => taxonomyById.get(id)?.label || taxonomyNodes.find(node => node.id === id)?.label || '')
+        .filter(Boolean)
+        .join(' / ');
 }
 
 function sectionLabel(section) {

@@ -34,6 +34,9 @@ Document shape:
   sectionId: 'QQAP9O4UyvlaYhqz7jdE',
   sectionName: 'DSS grade 8',
   questionBankListId: 'qb_lists_v1 document id',
+  classId: 'class_ix',
+  subjectId: 'class_ix__subject_mathematics',
+  chapterId: 'class_ix__subject_mathematics__chapter_algebra',
   randomQuestionTypeCounts: {
     mcq: 10,
     fib: 5,
@@ -60,9 +63,14 @@ Important fields:
 - `sectionId` - links the quiz session to a class section.
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
+- `classId` - optional `qb_taxonomy_v1` class node ID selected in the quiz session editor.
+- `subjectId` - optional `qb_taxonomy_v1` subject node ID selected in the quiz session editor.
+- `chapterId` - optional `qb_taxonomy_v1` chapter node ID selected in the quiz session editor.
 - `randomQuestionTypeCounts` - optional per-type limits for randomly picking questions from the selected question list. Missing or empty means use all questions.
 - `studentDifficultyLevels` - optional admission-number keyed difficulty overrides. Missing student entries use the quiz session default question selection.
 - `archived` - optional soft archive flag. Teachers can archive and unarchive quiz sessions they created.
+
+Quiz session taxonomy selections intentionally store IDs only. Do not duplicate class, subject, or chapter labels on the `classrooms` document; labels are read from `qb_taxonomy_v1`.
 
 ### `classSections`
 
@@ -191,6 +199,8 @@ Important fields:
 - `label` - human-readable label shown in topic analysis.
 - `classId`, `subjectId`, `chapterId`, `topicId` - stable IDs used by question documents.
 - `parentId` - parent taxonomy ID for hierarchy traversal.
+
+The quiz session create/edit form reads `class`, `subject`, and `chapter` nodes from this collection. The selected values are saved on `classrooms` as `classId`, `subjectId`, and `chapterId` only.
 
 ### `qb_questions_v1`
 
