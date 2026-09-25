@@ -627,12 +627,10 @@ function renderSections() {
                         <span>Date ${esc(formatQuizSessionDate(classroom))}</span>
                         <span>${classroom.classEnabled === true ? 'Enabled' : 'Disabled'}${classroom.archived === true ? ' · Archived' : ''}</span>
                     </button>
-                    ${classroom.creatorId === currentUser.uid ? `
-                        <div class="section-classroom-actions">
-                            <button class="btn small" type="button" data-edit-classroom="${classroom.id}">Edit</button>
-                            <button class="btn small" type="button" data-archive-classroom="${classroom.id}" data-archive-value="${classroom.archived === true ? 'false' : 'true'}">${classroom.archived === true ? 'Unarchive' : 'Archive'}</button>
-                        </div>
-                    ` : ''}
+                    <div class="section-classroom-actions">
+                        <button class="btn small" type="button" data-edit-classroom="${classroom.id}">Edit</button>
+                        ${classroom.creatorId === currentUser.uid ? `<button class="btn small" type="button" data-archive-classroom="${classroom.id}" data-archive-value="${classroom.archived === true ? 'false' : 'true'}">${classroom.archived === true ? 'Unarchive' : 'Archive'}</button>` : ''}
+                    </div>
                 </article>
             `).join('') : '<div class="empty-card">No quiz sessions found in this class section.</div>'}
         `
@@ -713,7 +711,7 @@ async function saveClassroomEdit(event) {
     event.preventDefault();
     if (!currentUser) return;
     const classroomId = els.editClassroomId.value;
-    const classroom = classrooms.find(c => c.id === classroomId);
+    const classroom = findClassroom(classroomId);
     const questionBankListId = els.editQuestionBankList.value;
     const selectedList = questionBankLists.find(list => list.id === questionBankListId);
     const selectedSection = classSections.find(section => section.id === els.editSectionId.value);
@@ -772,19 +770,22 @@ async function saveClassroomEdit(event) {
 
     try {
         await updateDoc(doc(db, COLLECTIONS.classrooms, classroom.id), updates);
-        Object.assign(classroom, updates, {
+        const updatedClassroom = {
+            ...classroom,
+            ...updates,
             sectionId: selectedSection?.id,
             sectionName: selectedSection ? sectionLabel(selectedSection) : undefined,
             questionBankListId: selectedList?.id
-        });
+        };
         if (!selectedSection) {
-            delete classroom.sectionId;
-            delete classroom.sectionName;
-            delete classroom.studentDifficultyLevels;
+            delete updatedClassroom.sectionId;
+            delete updatedClassroom.sectionName;
+            delete updatedClassroom.studentDifficultyLevels;
         }
-        if (!selectedList) delete classroom.questionBankListId;
-        if (randomQuestionTypeCounts) classroom.randomQuestionTypeCounts = randomQuestionTypeCounts;
-        else delete classroom.randomQuestionTypeCounts;
+        if (!selectedList) delete updatedClassroom.questionBankListId;
+        if (randomQuestionTypeCounts) updatedClassroom.randomQuestionTypeCounts = randomQuestionTypeCounts;
+        else delete updatedClassroom.randomQuestionTypeCounts;
+        syncClassroomState(updatedClassroom);
         els.classroomDialog.close();
         render();
         toast('Quiz session updated');
@@ -792,7 +793,19 @@ async function saveClassroomEdit(event) {
         reportError('Unable to update quiz session', error);
         return;
     }
-    await maybeOpenStudentDifficultyDialog(classroom, selectedSection);
+    await maybeOpenStudentDifficultyDialog(findClassroom(classroom.id) || classroom, selectedSection);
+}
+
+function syncClassroomState(updatedClassroom) {
+    [classrooms, sectionClassrooms].forEach(list => {
+        const index = list.findIndex(classroom => classroom.id === updatedClassroom.id);
+        if (index !== -1) list[index] = { ...list[index], ...updatedClassroom };
+    });
+    if (activeSectionId && updatedClassroom.sectionId !== activeSectionId) {
+        sectionClassrooms = sectionClassrooms.filter(classroom => classroom.id !== updatedClassroom.id);
+    } else if (activeSectionId && updatedClassroom.sectionId === activeSectionId && !sectionClassrooms.some(classroom => classroom.id === updatedClassroom.id)) {
+        sectionClassrooms = [updatedClassroom, ...sectionClassrooms].sort((a, b) => (b.createdDate || 0) - (a.createdDate || 0));
+    }
 }
 
 async function createClassroom(formValues, selectedList, selectedSection) {
@@ -876,8 +889,8 @@ function renderSubmissions() {
     document.querySelectorAll('[data-detail]').forEach(btn => {
         btn.addEventListener('click', () => openSubmissionDetail(btn.dataset.detail));
     });
-    document.querySelectorAll('[data-question-index]').forEach(btn => {
-        btn.addEventListener('click', () => openQuestionDetail(Number(btn.dataset.questionIndex)));
+    document.querySelectorAll('[data-question-key]').forEach(btn => {
+        btn.addEventListener('click', () => openQuestionDetail(btn.dataset.questionKey));
     });
     document.querySelectorAll('[data-submission-sort]').forEach(btn => {
         btn.addEventListener('click', () => setSubmissionSort(btn.dataset.submissionSort));
@@ -890,10 +903,10 @@ function setSubmissionViewMode(mode) {
 }
 
 function submissionTable(items) {
-    const maxAnswers = items.reduce((max, s) => Math.max(max, (s.answers || []).length), 0);
-    const questionHeaders = Array.from({ length: maxAnswers }, (_, index) => `
+    const questionColumns = buildQuestionColumns(items);
+    const questionHeaders = questionColumns.map(column => `
         <th scope="col">
-            <button class="question-head-btn" type="button" data-question-index="${index}">Q${index + 1}</button>
+            <button class="question-head-btn" type="button" data-question-key="${esc(column.key)}" title="${esc(column.title)}">${esc(column.label)}</button>
         </th>
     `).join('');
     return `
@@ -914,7 +927,7 @@ function submissionTable(items) {
                             <button class="table-link" type="button" data-detail="${s.id}">${esc(s.studentName || 'Student')}</button>
                         </th>
                         <td>${esc(s.admissionNo || '')}</td>
-                        ${Array.from({ length: maxAnswers }, (_, index) => answerCell((s.answers || [])[index])).join('')}
+                        ${questionColumns.map(column => answerCell(answerForQuestion(s, column.key).answer)).join('')}
                         <td>${esc(scoreLabel(s))}</td>
                         <td>${manualCount(s) ? esc(`${manualCount(s)} manual`) : ''}</td>
                     </tr>
@@ -922,6 +935,44 @@ function submissionTable(items) {
             </tbody>
         </table>
     `;
+}
+
+function buildQuestionColumns(items) {
+    const columns = [];
+    const seen = new Set();
+    items.forEach(submission => {
+        (submission.answers || []).forEach((answer, index) => {
+            const key = questionKeyForAnswer(answer, index);
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            const questionText = htmlToText(answer.promptHtml || answer.prompt || '').trim();
+            columns.push({
+                key,
+                label: `Q${columns.length + 1}`,
+                title: questionText || answer.questionId || `Question ${columns.length + 1}`
+            });
+        });
+    });
+    return columns;
+}
+
+function answerForQuestion(submission, questionKey) {
+    const answers = submission.answers || [];
+    const index = answers.findIndex((answer, answerIndex) => questionKeyForAnswer(answer, answerIndex) === questionKey);
+    return {
+        answer: index === -1 ? null : answers[index],
+        index
+    };
+}
+
+function questionKeyForAnswer(answer, index) {
+    if (!answer) return '';
+    if (answer.questionId) return `id:${answer.questionId}`;
+    const prompt = htmlToText(answer.promptHtml || answer.prompt || '').trim().replace(/\s+/g, ' ');
+    const correct = String(answer.correctAnswer || answer.expectedAnswer || '').trim().replace(/\s+/g, ' ');
+    const type = String(answer.type || '').trim();
+    if (prompt || correct || type) return `sig:${type}::${prompt}::${correct}`;
+    return `position:${index}`;
 }
 
 function sortHeader(label, key) {
@@ -967,17 +1018,22 @@ function answerCell(answer) {
     return `<td class="answer-cell ${state.className}" title="${esc(state.title)}">${esc(state.label)}</td>`;
 }
 
-function openQuestionDetail(index) {
+function openQuestionDetail(questionKey) {
     const visible = sortedSubmissions(filteredSubmissions());
-    const answer = visible.map(s => (s.answers || [])[index]).find(Boolean);
+    const column = buildQuestionColumns(visible).find(item => item.key === questionKey);
+    if (!column) return;
+    const responses = visible.map(submission => {
+        const { answer, index } = answerForQuestion(submission, questionKey);
+        return { submission, answer, index };
+    });
+    const answer = responses.map(item => item.answer).find(Boolean);
     if (!answer) return;
-    const responses = visible.map(s => ({ submission: s, answer: (s.answers || [])[index] }));
     const answered = responses.filter(item => item.answer);
     const correct = answered.filter(item => item.answer.isCorrect === true).length;
     const wrong = answered.filter(item => item.answer.isCorrect === false).length;
     const manual = answered.filter(item => item.answer && item.answer.isCorrect !== true && item.answer.isCorrect !== false).length;
 
-    els.questionDetailTitle.textContent = `Question ${index + 1}`;
+    els.questionDetailTitle.textContent = column.label;
     els.questionDetailMeta.textContent = `${correct} correct · ${wrong} wrong · ${manual} manual · ${visible.length - answered.length} missing`;
     els.questionPrompt.innerHTML = `
         <div class="rich-content">${sanitizeRich(answer.promptHtml || '')}</div>
@@ -987,7 +1043,7 @@ function openQuestionDetail(index) {
             ${answer.questionId ? `<span>${esc(answer.questionId)}</span>` : ''}
         </div>
     `;
-    activeQuestionReview = { index, answer, responses };
+    activeQuestionReview = { index: Number(column.label.replace('Q', '')) - 1, label: column.label, answer, responses };
     updateAiReviewControls();
     renderQuestionResponses();
     renderRich(els.questionPrompt);
@@ -1017,8 +1073,7 @@ function updateAiReviewControls(message = '') {
 
 function renderQuestionResponses() {
     if (!activeQuestionReview) return;
-    const { index } = activeQuestionReview;
-    els.questionResponseList.innerHTML = questionResponsesForDisplay().map(({ submission, answer: itemAnswer }) => {
+    els.questionResponseList.innerHTML = questionResponsesForDisplay().map(({ submission, answer: itemAnswer, index }) => {
         const state = answerState(itemAnswer);
         const statusLabel = answerStatusLabel(itemAnswer);
         const responseText = answerResponseText(itemAnswer);
@@ -1056,12 +1111,12 @@ function renderQuestionResponses() {
 
 function questionResponsesForDisplay() {
     if (!activeQuestionReview) return [];
-    const { index, responses } = activeQuestionReview;
+    const { responses } = activeQuestionReview;
     const items = [...responses];
     if (!els.sortQuestionByMarksDesc.checked) return items;
     return items.sort((a, b) => {
-        const aMarks = reviewMarksForSort(getAiReview(a.submission, a.answer, index));
-        const bMarks = reviewMarksForSort(getAiReview(b.submission, b.answer, index));
+        const aMarks = reviewMarksForSort(getAiReview(a.submission, a.answer, a.index));
+        const bMarks = reviewMarksForSort(getAiReview(b.submission, b.answer, b.index));
         if (bMarks !== aMarks) return bMarks - aMarks;
         return String(a.submission.studentName || '').localeCompare(String(b.submission.studentName || ''), undefined, { sensitivity: 'base' });
     });
@@ -1325,7 +1380,7 @@ async function saveAiReviewOverrides() {
         const key = row.dataset.reviewKey;
         if (!key) return;
         const response = activeQuestionReview.responses.find(item => {
-            return reviewKey(item.submission, item.answer, activeQuestionReview.index) === key;
+            return reviewKey(item.submission, item.answer, item.index) === key;
         });
         if (!response) return;
         const marksInput = row.querySelector('.review-marks');
@@ -1398,7 +1453,7 @@ function downloadQuestionPdfReport() {
     const correctAnswer = activeQuestionReview.answer.correctAnswer || activeQuestionReview.answer.expectedAnswer || 'Teacher review';
     const sortedNotice = els.sortQuestionByMarksDesc.checked ? 'Sorted by marks descending' : 'Original visible order';
 
-    addText(`Question ${activeQuestionReview.index + 1} Review Report`, { size: 16, style: 'bold', gap: 10 });
+    addText(`${activeQuestionReview.label || `Question ${activeQuestionReview.index + 1}`} Review Report`, { size: 16, style: 'bold', gap: 10 });
     addText(`Quiz session: ${classroom.className || classroom.classCode || activeClassroomId || ''}`);
     addText(`Session code: ${classroom.classCode || ''}`);
     addText(`Generated: ${formatDate(Date.now())}`);
@@ -1406,8 +1461,8 @@ function downloadQuestionPdfReport() {
     addText(`Question: ${questionText || 'No prompt text available'}`, { style: 'bold', gap: 8 });
     addText(`Teacher correct answer: ${correctAnswer}`);
 
-    questionResponsesForDisplay().forEach(({ submission, answer }, position) => {
-        const review = getAiReview(submission, answer, activeQuestionReview.index);
+    questionResponsesForDisplay().forEach(({ submission, answer, index }, position) => {
+        const review = getAiReview(submission, answer, index);
         const marks = hasSavedAiReview(review) ? `${formatMarks(review.marks)}/4` : 'Pending';
         const reason = hasSavedAiReview(review) ? review.reason : 'No review saved';
         const source = review?.source === 'teacher' ? 'Teacher override' : review?.source === 'ai' ? 'AI generated' : 'Not reviewed';
@@ -1419,7 +1474,7 @@ function downloadQuestionPdfReport() {
     });
 
     const safeTitle = String(classroom.className || classroom.classCode || 'quiz-session').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-    docPdf.save(`${safeTitle || 'quiz-session'}-question-${activeQuestionReview.index + 1}-review.pdf`);
+    docPdf.save(`${safeTitle || 'quiz-session'}-${String(activeQuestionReview.label || `question-${activeQuestionReview.index + 1}`).toLowerCase()}-review.pdf`);
 }
 
 function buildGeminiReviewPrompt(answer, index, rows, useAiAnswer) {
@@ -1535,10 +1590,10 @@ function isReviewableAnswer(answer) {
 function reviewableResponsesForActiveQuestion() {
     if (!activeQuestionReview) return [];
     const pendingOnly = $('resultFilter').value === 'ai_pending';
-    return activeQuestionReview.responses.filter(({ submission, answer }) => {
+    return activeQuestionReview.responses.filter(({ submission, answer, index }) => {
         if (!isReviewableAnswer(answer)) return false;
         if (!pendingOnly) return true;
-        return !hasSavedAiReview(getAiReview(submission, answer, activeQuestionReview.index));
+        return !hasSavedAiReview(getAiReview(submission, answer, index));
     });
 }
 
@@ -1567,8 +1622,7 @@ function reviewKey(submission, answer, index) {
 }
 
 async function persistAiReviewForResponse(response, reviewData) {
-    const { submission } = response;
-    const index = activeQuestionReview.index;
+    const { submission, index } = response;
     const answers = Array.isArray(submission.answers) ? submission.answers.map(answer => ({ ...answer })) : [];
     if (!submission.id || !answers[index]) return false;
     const savedReview = {
