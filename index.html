@@ -102,6 +102,43 @@
                 </div>
             </section>
 
+            <section class="panel section-report-panel">
+                <div class="panel-head">
+                    <div>
+                        <h2>Section Question Report</h2>
+                        <p id="sectionReportSummary">Choose a viewer-access section to analyse enabled quiz sessions.</p>
+                    </div>
+                    <button class="btn" id="refreshSectionReportBtn" type="button">Load Report</button>
+                </div>
+                <div class="filters-grid">
+                    <label class="field">
+                        <span>Section</span>
+                        <select id="sectionReportSectionId"></select>
+                    </label>
+                    <label class="field">
+                        <span>Question Type</span>
+                        <select id="sectionReportQuestionType">
+                            <option value="">Any</option>
+                            <option value="mcq">MCQ</option>
+                            <option value="fib">FIB</option>
+                            <option value="short_answer">Short answer</option>
+                            <option value="true_false">True/False</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Seen By &gt;</span>
+                        <input id="sectionReportSeenMin" type="number" min="0" step="1" value="5" />
+                    </label>
+                    <label class="field">
+                        <span>Wrong &gt; %</span>
+                        <input id="sectionReportWrongMin" type="number" min="0" max="100" step="1" value="40" />
+                    </label>
+                </div>
+                <div id="sectionReportList" class="submission-table-wrap analysis-table-wrap">
+                    <div class="empty-card">No section report loaded.</div>
+                </div>
+            </section>
+
             <section class="panel submissions-panel">
                 <div class="panel-head">
                     <div>
