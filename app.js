@@ -1102,15 +1102,16 @@ function renderSelectedClassroom() {
     setStats(submissions.length, studentCount, average, manual);
 }
 
-function viewerSections() {
+function reportAccessibleSections() {
     const email = String(currentUser?.email || '').toLowerCase();
     return classSections.filter(section => (section.members || []).some(member => {
-        return String(member.email || '').toLowerCase() === email && member.role === 'viewer';
+        const role = String(member.role || '').toLowerCase();
+        return String(member.email || '').toLowerCase() === email && ['viewer', 'admin'].includes(role);
     }));
 }
 
 function renderSectionReportOptions() {
-    const sections = viewerSections();
+    const sections = reportAccessibleSections();
     const current = els.sectionReportSectionId.value;
     els.sectionReportSectionId.innerHTML = sections.length
         ? sections.map(section => `<option value="${esc(section.id)}">${esc(sectionLabel(section))}</option>`).join('')
@@ -1119,14 +1120,14 @@ function renderSectionReportOptions() {
     els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
     if (!sections.length) {
         sectionReportSubmissions = [];
-        els.sectionReportSummary.textContent = 'No sections found where you have viewer access.';
-        els.sectionReportList.innerHTML = '<div class="empty-card">No viewer-access sections available.</div>';
+        els.sectionReportSummary.textContent = 'No sections found where you have viewer or admin access.';
+        els.sectionReportList.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
     }
 }
 
 async function loadSectionQuestionReport() {
     const sectionId = els.sectionReportSectionId.value;
-    const section = viewerSections().find(item => item.id === sectionId);
+    const section = reportAccessibleSections().find(item => item.id === sectionId);
     if (!section) {
         sectionReportSubmissions = [];
         renderSectionQuestionReport();
