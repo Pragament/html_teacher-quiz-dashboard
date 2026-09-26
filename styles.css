@@ -1254,9 +1254,23 @@ button {
     padding: 12px;
 }
 
-.section-report-export strong {
-    display: block;
+.export-columns-disclosure {
+    flex: 1;
+    min-width: 0;
+}
+
+.export-columns-disclosure summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 800;
+    list-style-position: inside;
+}
+
+.export-columns-disclosure[open] summary {
     margin-bottom: 8px;
+}
+
+.section-report-export strong {
     font-size: 13px;
 }
 
