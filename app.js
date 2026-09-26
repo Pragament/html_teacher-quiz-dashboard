@@ -462,18 +462,20 @@ function compareTaxonomyNodes(a, b) {
     return compareText(a.label || a.id, b.label || b.id);
 }
 
-async function loadQuestionMetadataForSubmissions(items) {
+async function loadQuestionMetadataForSubmissions(items, onProgress = null) {
     const questionIds = Array.from(new Set(items.flatMap(submission => {
         return (submission.answers || []).map(answer => answer?.questionId).filter(Boolean);
     })));
     const missingQuestionIds = questionIds.filter(id => !questionMetadataById.has(id));
     if (!missingQuestionIds.length) {
+        onProgress?.({ loaded: questionIds.length, total: questionIds.length, phase: 'cached' });
         await loadTaxonomyForQuestions(questionIds.map(id => questionMetadataById.get(id)).filter(Boolean));
         return;
     }
     try {
         const loadedQuestions = [];
-        for (const questionId of missingQuestionIds) {
+        for (const [index, questionId] of missingQuestionIds.entries()) {
+            onProgress?.({ loaded: index, total: missingQuestionIds.length, phase: 'questions' });
             const snap = await getDoc(doc(db, COLLECTIONS.questionBankQuestions, questionId));
             if (!snap.exists()) {
                 questionMetadataById.set(questionId, null);
@@ -482,8 +484,10 @@ async function loadQuestionMetadataForSubmissions(items) {
             const question = { id: snap.id, ...snap.data() };
             questionMetadataById.set(questionId, question);
             loadedQuestions.push(question);
+            onProgress?.({ loaded: index + 1, total: missingQuestionIds.length, phase: 'questions' });
         }
         const cachedQuestions = questionIds.map(id => questionMetadataById.get(id)).filter(Boolean);
+        onProgress?.({ loaded: missingQuestionIds.length, total: missingQuestionIds.length, phase: 'taxonomy' });
         await loadTaxonomyForQuestions([...loadedQuestions, ...cachedQuestions]);
     } catch (error) {
         toast('Unable to load question topic metadata');
@@ -1179,7 +1183,14 @@ async function loadSectionQuestionReport() {
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${donePercent}%</div>`;
         }
         sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
-        await loadQuestionMetadataForSubmissions(sectionReportSubmissions);
+        els.sectionReportSummary.textContent = `${sectionLabel(section)} · Quiz sessions loaded. Loading question metadata...`;
+        els.sectionReportList.innerHTML = '<div class="empty-card">Loading question metadata...</div>';
+        await loadQuestionMetadataForSubmissions(sectionReportSubmissions, ({ loaded, total, phase }) => {
+            const percent = total ? Math.round((loaded / total) * 100) : 100;
+            const label = phase === 'taxonomy' ? 'Loading taxonomy labels' : phase === 'cached' ? 'Using cached question metadata' : 'Loading question metadata';
+            els.sectionReportSummary.textContent = `${sectionLabel(section)} · ${label} (${percent}%)`;
+            els.sectionReportList.innerHTML = `<div class="empty-card">${label}... ${percent}%</div>`;
+        });
         els.sectionReportSummary.textContent = `${sectionLabel(section)} · ${enabledClassrooms.length} enabled quiz session${enabledClassrooms.length === 1 ? '' : 's'} · ${sectionReportSubmissions.length} submission${sectionReportSubmissions.length === 1 ? '' : 's'}`;
         renderSectionQuestionReport();
     } catch (error) {
@@ -1478,7 +1489,7 @@ function exportSectionReportPdf() {
         const width = options.width || colWidth;
         docPdf.setFont('helvetica', style);
         docPdf.setFontSize(size);
-        const lines = docPdf.splitTextToSize(String(text ?? ''), width - 4);
+        const lines = docPdf.splitTextToSize(textForPdf(text), width - 4);
         lines.slice(0, options.maxLines || 3).forEach(line => {
             docPdf.text(line, x, y);
             y += size + 3;
@@ -1491,7 +1502,7 @@ function exportSectionReportPdf() {
     y += 18;
     docPdf.setFont('helvetica', 'normal');
     docPdf.setFontSize(9);
-    docPdf.text(`${sectionReportContextLabel()} · Generated ${formatDate(Date.now())}`, margin, y);
+    docPdf.text(textForPdf(`${sectionReportContextLabel()} · Generated ${formatDate(Date.now())}`), margin, y);
     y += 18;
 
     addPageIfNeeded(24);
@@ -1499,7 +1510,7 @@ function exportSectionReportPdf() {
     columns.forEach((column, index) => {
         docPdf.setFont('helvetica', 'bold');
         docPdf.setFontSize(8);
-        docPdf.text(String(column.header), margin + index * colWidth, headerY);
+        docPdf.text(textForPdf(column.header), margin + index * colWidth, headerY);
     });
     y += 16;
     rows.forEach(row => {
@@ -1510,7 +1521,7 @@ function exportSectionReportPdf() {
             const x = margin + index * colWidth;
             docPdf.setFont('helvetica', 'normal');
             docPdf.setFontSize(8);
-            const lines = docPdf.splitTextToSize(String(column.value(row) ?? ''), colWidth - 4).slice(0, 3);
+            const lines = docPdf.splitTextToSize(textForPdf(column.value(row)), colWidth - 4).slice(0, 3);
             lines.forEach((line, lineIndex) => docPdf.text(line, x, rowY + lineIndex * 10));
             rowHeight = Math.max(rowHeight, lines.length * 10 + 6);
         });
@@ -3480,6 +3491,35 @@ function htmlToText(value) {
     return template.content.textContent || String(value || '');
 }
 
+function normalizeExportText(value) {
+    return String(value ?? '')
+        .replaceAll('Î¸', 'θ')
+        .replaceAll('Î˜', 'Θ')
+        .replaceAll('Ï€', 'π')
+        .replaceAll('Â°', '°')
+        .replaceAll('Â±', '±')
+        .replaceAll('Ã—', '×')
+        .replaceAll('Ã·', '÷')
+        .replaceAll('âˆ’', '−')
+        .replaceAll('â‰ ', '≠')
+        .replaceAll('â‰¤', '≤')
+        .replaceAll('â‰¥', '≥')
+        .replaceAll('âˆš', '√')
+        .replaceAll('Â', '');
+}
+
+function textForPdf(value) {
+    return normalizeExportText(value)
+        .replaceAll('θ', 'theta')
+        .replaceAll('Θ', 'Theta')
+        .replaceAll('π', 'pi')
+        .replaceAll('−', '-')
+        .replaceAll('≤', '<=')
+        .replaceAll('≥', '>=')
+        .replaceAll('≠', '!=')
+        .replaceAll('√', 'sqrt');
+}
+
 function sanitizeRich(value) {
     const template = document.createElement('template');
     template.innerHTML = String(value || '');
@@ -3493,10 +3533,11 @@ function sanitizeRich(value) {
 }
 
 function toCsv(rows) {
-    return rows.map(row => row.map(value => {
-        const text = String(value ?? '');
+    const body = rows.map(row => row.map(value => {
+        const text = normalizeExportText(value);
         return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     }).join(',')).join('\n');
+    return `\uFEFF${body}`;
 }
 
 function downloadBlob(blob, name) {
