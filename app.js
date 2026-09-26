@@ -68,6 +68,17 @@ const EXPORT_FIELDS = [
     { id: 'scorePercent', label: 'Score Percent', header: 'scorePercent', value: (s) => scorePercent(s) },
     { id: 'manualReviewCount', label: 'Manual Review Count', header: 'manualReviewCount', value: (s) => manualCount(s) }
 ];
+const SECTION_REPORT_EXPORT_COLUMNS = [
+    { id: 'question', label: 'Question', header: 'Question', selected: true, value: row => row.title },
+    { id: 'type', label: 'Question Type', header: 'Question Type', selected: true, value: row => questionTypeLabel(row.type || 'unknown') },
+    { id: 'topic', label: 'Topic', header: 'Topic', selected: true, value: row => row.topic },
+    { id: 'seen', label: 'Seen By', header: 'Seen By', selected: true, value: row => row.seenBy },
+    { id: 'avg', label: 'Avg', header: 'Avg', selected: false, value: row => `${row.avgPercent}%` },
+    { id: 'correct', label: 'Correct', header: 'Correct', selected: false, value: row => percentLabel(row.correct, row.total) },
+    { id: 'partial', label: 'Partial', header: 'Partial', selected: false, value: row => percentLabel(row.partial, row.total) },
+    { id: 'wrong', label: 'Wrong', header: 'Wrong', selected: true, value: row => percentLabel(row.wrong, row.total) },
+    { id: 'pending', label: 'Needs Review', header: 'Needs Review', selected: false, value: row => row.pending }
+];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -142,6 +153,9 @@ const els = {
     sectionReportQuestionType: $('sectionReportQuestionType'),
     sectionReportSeenMin: $('sectionReportSeenMin'),
     sectionReportWrongMin: $('sectionReportWrongMin'),
+    sectionReportExportFields: $('sectionReportExportFields'),
+    exportSectionReportCsvBtn: $('exportSectionReportCsvBtn'),
+    exportSectionReportPdfBtn: $('exportSectionReportPdfBtn'),
     refreshSectionReportBtn: $('refreshSectionReportBtn'),
     sectionReportSummary: $('sectionReportSummary'),
     sectionReportList: $('sectionReportList'),
@@ -279,6 +293,8 @@ function bindEvents() {
     els.sectionReportSeenMin.addEventListener('input', renderSectionQuestionReport);
     els.sectionReportWrongMin.addEventListener('input', renderSectionQuestionReport);
     els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
+    els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
+    els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
     $('closeStudentReportBtn').addEventListener('click', () => els.studentReportDialog.close());
     els.studentReportSubjectFilter.addEventListener('change', renderStudentReport);
@@ -613,6 +629,7 @@ function render() {
     renderSections();
     renderSelectedClassroom();
     renderSectionReportOptions();
+    renderSectionReportExportFields();
     renderSectionQuestionReport();
     renderSubmissions();
 }
@@ -1142,7 +1159,13 @@ async function loadSectionQuestionReport() {
             .map(d => ({ id: d.id, ...d.data() }))
             .filter(classroom => classroom.classEnabled === true);
         const byId = new Map();
-        for (const classroom of enabledClassrooms) {
+        if (!enabledClassrooms.length) {
+            els.sectionReportSummary.textContent = `${sectionLabel(section)} · No enabled quiz sessions found`;
+        }
+        for (const [index, classroom] of enabledClassrooms.entries()) {
+            const percent = Math.round((index / enabledClassrooms.length) * 100);
+            els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processing ${index + 1}/${enabledClassrooms.length} quiz sessions (${percent}%) · ${classroom.className || classroom.classCode || classroom.id}`;
+            els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${percent}%</div>`;
             const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
             if (classroom.classCode && classroom.classCode !== classroom.id) {
                 queries.push(query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.classCode)));
@@ -1151,6 +1174,9 @@ async function loadSectionQuestionReport() {
                 const snap = await getDocs(submissionQuery);
                 snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
             }
+            const donePercent = Math.round(((index + 1) / enabledClassrooms.length) * 100);
+            els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processed ${index + 1}/${enabledClassrooms.length} quiz sessions (${donePercent}%)`;
+            els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${donePercent}%</div>`;
         }
         sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
         await loadQuestionMetadataForSubmissions(sectionReportSubmissions);
@@ -1376,6 +1402,133 @@ function renderSectionQuestionReport() {
     els.sectionReportList.innerHTML = rows.length
         ? sectionQuestionReportTable(rows)
         : '<div class="empty-card">No questions match these report filters.</div>';
+}
+
+function renderSectionReportExportFields() {
+    els.sectionReportExportFields.innerHTML = SECTION_REPORT_EXPORT_COLUMNS.map(column => `
+        <label class="check-field">
+            <input type="checkbox" value="${esc(column.id)}" ${column.selected ? 'checked' : ''} />
+            <span>${esc(column.label)}</span>
+        </label>
+    `).join('');
+}
+
+function currentSectionQuestionReportRows() {
+    if (!sectionReportSubmissions.length) return [];
+    return filteredSectionQuestionRows(sectionQuestionReportRows(sectionReportSubmissions))
+        .sort(compareSectionQuestionReportRows);
+}
+
+function selectedSectionReportExportColumns() {
+    const selectedIds = Array.from(els.sectionReportExportFields.querySelectorAll('input:checked')).map(input => input.value);
+    return SECTION_REPORT_EXPORT_COLUMNS.filter(column => selectedIds.includes(column.id));
+}
+
+function exportSectionReportCsv() {
+    const columns = selectedSectionReportExportColumns();
+    if (!columns.length) {
+        toast('Select at least one section report export column');
+        return;
+    }
+    const rows = currentSectionQuestionReportRows();
+    if (!rows.length) {
+        toast('No section report rows to export');
+        return;
+    }
+    const csvRows = [
+        columns.map(column => column.header),
+        ...rows.map(row => columns.map(column => column.value(row)))
+    ];
+    downloadBlob(new Blob([toCsv(csvRows)], { type: 'text/csv;charset=utf-8' }), `${sectionReportFileBaseName()}.csv`);
+}
+
+function exportSectionReportPdf() {
+    const columns = selectedSectionReportExportColumns();
+    if (!columns.length) {
+        toast('Select at least one section report export column');
+        return;
+    }
+    const rows = currentSectionQuestionReportRows();
+    if (!rows.length) {
+        toast('No section report rows to export');
+        return;
+    }
+    const jspdf = window.jspdf?.jsPDF;
+    if (!jspdf) {
+        toast('PDF library is still loading');
+        return;
+    }
+    const docPdf = new jspdf({ unit: 'pt', format: 'a4', orientation: columns.length > 5 ? 'landscape' : 'portrait' });
+    const pageWidth = docPdf.internal.pageSize.getWidth();
+    const pageHeight = docPdf.internal.pageSize.getHeight();
+    const margin = 30;
+    const tableWidth = pageWidth - margin * 2;
+    const colWidth = tableWidth / columns.length;
+    let y = margin;
+
+    const addPageIfNeeded = (height = 16) => {
+        if (y + height > pageHeight - margin) {
+            docPdf.addPage();
+            y = margin;
+        }
+    };
+    const addText = (text, x, options = {}) => {
+        const size = options.size || 8;
+        const style = options.style || 'normal';
+        const width = options.width || colWidth;
+        docPdf.setFont('helvetica', style);
+        docPdf.setFontSize(size);
+        const lines = docPdf.splitTextToSize(String(text ?? ''), width - 4);
+        lines.slice(0, options.maxLines || 3).forEach(line => {
+            docPdf.text(line, x, y);
+            y += size + 3;
+        });
+    };
+
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.setFontSize(14);
+    docPdf.text('Section Question Report', margin, y);
+    y += 18;
+    docPdf.setFont('helvetica', 'normal');
+    docPdf.setFontSize(9);
+    docPdf.text(`${sectionReportContextLabel()} · Generated ${formatDate(Date.now())}`, margin, y);
+    y += 18;
+
+    addPageIfNeeded(24);
+    const headerY = y;
+    columns.forEach((column, index) => {
+        docPdf.setFont('helvetica', 'bold');
+        docPdf.setFontSize(8);
+        docPdf.text(String(column.header), margin + index * colWidth, headerY);
+    });
+    y += 16;
+    rows.forEach(row => {
+        addPageIfNeeded(42);
+        const rowY = y;
+        let rowHeight = 12;
+        columns.forEach((column, index) => {
+            const x = margin + index * colWidth;
+            docPdf.setFont('helvetica', 'normal');
+            docPdf.setFontSize(8);
+            const lines = docPdf.splitTextToSize(String(column.value(row) ?? ''), colWidth - 4).slice(0, 3);
+            lines.forEach((line, lineIndex) => docPdf.text(line, x, rowY + lineIndex * 10));
+            rowHeight = Math.max(rowHeight, lines.length * 10 + 6);
+        });
+        y += rowHeight;
+    });
+    docPdf.save(`${sectionReportFileBaseName()}.pdf`);
+}
+
+function sectionReportContextLabel() {
+    const section = reportAccessibleSections().find(item => item.id === els.sectionReportSectionId.value);
+    return `${section ? sectionLabel(section) : 'Section'} · ${currentSectionQuestionReportRows().length} row${currentSectionQuestionReportRows().length === 1 ? '' : 's'}`;
+}
+
+function sectionReportFileBaseName() {
+    return String(`section-question-report-${sectionReportContextLabel()}`)
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase();
 }
 
 function sectionQuestionReportRows(items) {
