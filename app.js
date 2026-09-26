@@ -87,6 +87,8 @@ let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'students';
 let submissionSort = { key: 'score', direction: 'desc' };
+let sectionReportSubmissions = [];
+let sectionReportSort = { key: 'seen', direction: 'desc' };
 let analysisSort = {
     students: { key: 'score', direction: 'desc' },
     topics: { key: 'avg', direction: 'asc' },
@@ -136,6 +138,13 @@ const els = {
     selectedClassroomTitle: $('selectedClassroomTitle'),
     selectedClassroomMeta: $('selectedClassroomMeta'),
     enabledChip: $('enabledChip'),
+    sectionReportSectionId: $('sectionReportSectionId'),
+    sectionReportQuestionType: $('sectionReportQuestionType'),
+    sectionReportSeenMin: $('sectionReportSeenMin'),
+    sectionReportWrongMin: $('sectionReportWrongMin'),
+    refreshSectionReportBtn: $('refreshSectionReportBtn'),
+    sectionReportSummary: $('sectionReportSummary'),
+    sectionReportList: $('sectionReportList'),
     submissionSummary: $('submissionSummary'),
     submissionList: $('submissionList'),
     detailDialog: $('detailDialog'),
@@ -239,6 +248,7 @@ onAuthStateChanged(auth, async (user) => {
         questionMetadataById = new Map();
         taxonomyById = new Map();
         submissions = [];
+        sectionReportSubmissions = [];
         activeClassroomId = null;
         activeSectionId = null;
         setStatus('Sign in to view your quiz sessions');
@@ -263,6 +273,12 @@ function bindEvents() {
     els.refreshBtn.addEventListener('click', refreshActive);
     $('createClassroomBtn').addEventListener('click', openClassroomCreator);
     els.showArchivedClassrooms.addEventListener('change', toggleArchivedClassrooms);
+    els.refreshSectionReportBtn.addEventListener('click', loadSectionQuestionReport);
+    els.sectionReportSectionId.addEventListener('change', loadSectionQuestionReport);
+    els.sectionReportQuestionType.addEventListener('change', renderSectionQuestionReport);
+    els.sectionReportSeenMin.addEventListener('input', renderSectionQuestionReport);
+    els.sectionReportWrongMin.addEventListener('input', renderSectionQuestionReport);
+    els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
     $('closeStudentReportBtn').addEventListener('click', () => els.studentReportDialog.close());
     els.studentReportSubjectFilter.addEventListener('change', renderStudentReport);
@@ -596,6 +612,8 @@ function render() {
     renderClassrooms();
     renderSections();
     renderSelectedClassroom();
+    renderSectionReportOptions();
+    renderSectionQuestionReport();
     renderSubmissions();
 }
 
@@ -1084,6 +1102,68 @@ function renderSelectedClassroom() {
     setStats(submissions.length, studentCount, average, manual);
 }
 
+function viewerSections() {
+    const email = String(currentUser?.email || '').toLowerCase();
+    return classSections.filter(section => (section.members || []).some(member => {
+        return String(member.email || '').toLowerCase() === email && member.role === 'viewer';
+    }));
+}
+
+function renderSectionReportOptions() {
+    const sections = viewerSections();
+    const current = els.sectionReportSectionId.value;
+    els.sectionReportSectionId.innerHTML = sections.length
+        ? sections.map(section => `<option value="${esc(section.id)}">${esc(sectionLabel(section))}</option>`).join('')
+        : '<option value="">No viewer sections</option>';
+    els.sectionReportSectionId.value = sections.some(section => section.id === current) ? current : sections[0]?.id || '';
+    els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
+    if (!sections.length) {
+        sectionReportSubmissions = [];
+        els.sectionReportSummary.textContent = 'No sections found where you have viewer access.';
+        els.sectionReportList.innerHTML = '<div class="empty-card">No viewer-access sections available.</div>';
+    }
+}
+
+async function loadSectionQuestionReport() {
+    const sectionId = els.sectionReportSectionId.value;
+    const section = viewerSections().find(item => item.id === sectionId);
+    if (!section) {
+        sectionReportSubmissions = [];
+        renderSectionQuestionReport();
+        return;
+    }
+    els.refreshSectionReportBtn.disabled = true;
+    els.sectionReportSummary.textContent = `Loading enabled quiz sessions for ${sectionLabel(section)}...`;
+    els.sectionReportList.innerHTML = '<div class="empty-card">Loading section question report...</div>';
+    try {
+        const classroomSnap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('sectionId', '==', sectionId)));
+        const enabledClassrooms = classroomSnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(classroom => classroom.classEnabled === true);
+        const byId = new Map();
+        for (const classroom of enabledClassrooms) {
+            const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
+            if (classroom.classCode && classroom.classCode !== classroom.id) {
+                queries.push(query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.classCode)));
+            }
+            for (const submissionQuery of queries) {
+                const snap = await getDocs(submissionQuery);
+                snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+            }
+        }
+        sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
+        await loadQuestionMetadataForSubmissions(sectionReportSubmissions);
+        els.sectionReportSummary.textContent = `${sectionLabel(section)} · ${enabledClassrooms.length} enabled quiz session${enabledClassrooms.length === 1 ? '' : 's'} · ${sectionReportSubmissions.length} submission${sectionReportSubmissions.length === 1 ? '' : 's'}`;
+        renderSectionQuestionReport();
+    } catch (error) {
+        sectionReportSubmissions = [];
+        els.sectionReportSummary.textContent = error.message || 'Unable to load section question report';
+        els.sectionReportList.innerHTML = '<div class="empty-card">Unable to load section question report.</div>';
+    } finally {
+        els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
+    }
+}
+
 function setStats(submissionCount, studentCount, average, manual) {
     $('statSubmissions').textContent = String(submissionCount);
     $('statStudents').textContent = String(studentCount);
@@ -1280,6 +1360,166 @@ function questionAnalysisTable(items) {
             </tbody>
         </table>
     `;
+}
+
+function renderSectionQuestionReport() {
+    if (!sectionReportSubmissions.length) {
+        if (els.sectionReportSectionId.value) {
+            els.sectionReportList.innerHTML = '<div class="empty-card">No submissions found for enabled quiz sessions in this section.</div>';
+        }
+        return;
+    }
+    const rows = filteredSectionQuestionRows(sectionQuestionReportRows(sectionReportSubmissions))
+        .sort(compareSectionQuestionReportRows);
+    els.sectionReportList.className = 'submission-table-wrap analysis-table-wrap';
+    els.sectionReportList.innerHTML = rows.length
+        ? sectionQuestionReportTable(rows)
+        : '<div class="empty-card">No questions match these report filters.</div>';
+}
+
+function sectionQuestionReportRows(items) {
+    const columns = buildQuestionColumnsForSectionReport(items);
+    return columns.map(column => questionColumnStatsForSectionReport(items, column));
+}
+
+function buildQuestionColumnsForSectionReport(items) {
+    const columns = [];
+    const seen = new Set();
+    const typeFilter = els.sectionReportQuestionType.value;
+    items.forEach(submission => {
+        (submission.answers || []).forEach((answer, index) => {
+            if (typeFilter && normalizedQuestionType(answer) !== typeFilter) return;
+            const key = questionKeyForAnswer(answer, index);
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            const questionText = questionTitleForAnswer(answer);
+            columns.push({
+                key,
+                title: questionText || answer.questionId || `Question ${columns.length + 1}`
+            });
+        });
+    });
+    return columns;
+}
+
+function questionColumnStatsForSectionReport(items, column) {
+    const stats = createAnalysisStats(column.title);
+    let topic = '';
+    let type = '';
+    items.forEach(submission => {
+        const { answer, index } = answerForSectionReportQuestion(submission, column.key);
+        if (!answer) return;
+        if (!topic) topic = topicLabelForAnswer(answer, submission);
+        if (!type) type = normalizedQuestionType(answer);
+        addAnswerToStats(stats, submission, answer, index);
+    });
+    finalizeAnalysisStats(stats);
+    return {
+        key: column.key,
+        title: column.title,
+        topic: topic || 'Unmapped',
+        type,
+        seenBy: stats.students.size,
+        total: stats.total,
+        avgPercent: stats.avgPercent,
+        correct: stats.correct,
+        partial: stats.partial,
+        wrong: stats.wrong,
+        pending: stats.pending,
+        correctPercent: percentValue(stats.correct, stats.total) * 100,
+        partialPercent: percentValue(stats.partial, stats.total) * 100,
+        wrongPercent: percentValue(stats.wrong, stats.total) * 100
+    };
+}
+
+function answerForSectionReportQuestion(submission, questionKey) {
+    const typeFilter = els.sectionReportQuestionType.value;
+    const answers = submission.answers || [];
+    const index = answers.findIndex((answer, answerIndex) => {
+        if (typeFilter && normalizedQuestionType(answer) !== typeFilter) return false;
+        return questionKeyForAnswer(answer, answerIndex) === questionKey;
+    });
+    return {
+        answer: index === -1 ? null : answers[index],
+        index
+    };
+}
+
+function filteredSectionQuestionRows(rows) {
+    const seenMin = Number(els.sectionReportSeenMin.value || 0);
+    const wrongMin = Number(els.sectionReportWrongMin.value || 0);
+    return rows.filter(row => {
+        if (Number.isFinite(seenMin) && row.seenBy <= seenMin) return false;
+        if (Number.isFinite(wrongMin) && row.wrongPercent <= wrongMin) return false;
+        return true;
+    });
+}
+
+function sectionQuestionReportTable(rows) {
+    return `
+        <table class="submission-table analysis-table question-analysis-table">
+            <thead>
+                <tr>
+                    <th scope="col">${sectionReportSortHeader('Question', 'question')}</th>
+                    <th scope="col">${sectionReportSortHeader('Question Type', 'type')}</th>
+                    <th scope="col">${sectionReportSortHeader('Topic', 'topic')}</th>
+                    <th scope="col">${sectionReportSortHeader('Seen By', 'seen')}</th>
+                    <th scope="col">${sectionReportSortHeader('Avg', 'avg')}</th>
+                    <th scope="col">${sectionReportSortHeader('Correct', 'correct')}</th>
+                    <th scope="col">${sectionReportSortHeader('Partial', 'partial')}</th>
+                    <th scope="col">${sectionReportSortHeader('Wrong', 'wrong')}</th>
+                    <th scope="col">${sectionReportSortHeader('Needs Review', 'pending')}</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map(row => `
+                    <tr>
+                        <th scope="row" class="analysis-text-cell">${esc(row.title)}</th>
+                        <td>${esc(questionTypeLabel(row.type || 'unknown'))}</td>
+                        <td class="analysis-text-cell">${esc(row.topic)}</td>
+                        <td>${row.seenBy}</td>
+                        <td>${row.avgPercent}%</td>
+                        <td>${percentLabel(row.correct, row.total)}</td>
+                        <td>${percentLabel(row.partial, row.total)}</td>
+                        <td>${percentLabel(row.wrong, row.total)}</td>
+                        <td>${row.pending}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function sectionReportSortHeader(label, key) {
+    const active = sectionReportSort.key === key;
+    const direction = active ? sectionReportSort.direction === 'asc' ? 'ASC' : 'DESC' : 'SORT';
+    return `<button class="sort-head-btn ${active ? 'active' : ''}" type="button" data-section-report-sort="${key}">${esc(label)} <span>${direction}</span></button>`;
+}
+
+function handleSectionReportSortClick(event) {
+    const button = event.target.closest('[data-section-report-sort]');
+    if (!button) return;
+    const key = button.dataset.sectionReportSort;
+    const defaultDirection = ['seen', 'avg', 'correct', 'partial', 'wrong', 'pending'].includes(key) ? 'desc' : 'asc';
+    sectionReportSort = sectionReportSort.key === key
+        ? { key, direction: sectionReportSort.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: defaultDirection };
+    renderSectionQuestionReport();
+}
+
+function compareSectionQuestionReportRows(a, b) {
+    const sort = sectionReportSort;
+    let result = 0;
+    if (sort.key === 'question') result = compareText(a.title, b.title);
+    else if (sort.key === 'type') result = compareText(questionTypeLabel(a.type || 'unknown'), questionTypeLabel(b.type || 'unknown'));
+    else if (sort.key === 'topic') result = compareText(a.topic, b.topic);
+    else if (sort.key === 'seen') result = a.seenBy - b.seenBy;
+    else if (sort.key === 'correct') result = a.correctPercent - b.correctPercent;
+    else if (sort.key === 'partial') result = a.partialPercent - b.partialPercent;
+    else if (sort.key === 'wrong') result = a.wrongPercent - b.wrongPercent;
+    else if (sort.key === 'pending') result = a.pending - b.pending;
+    else result = a.avgPercent - b.avgPercent;
+    return sort.direction === 'asc' ? result : -result;
 }
 
 function buildQuestionColumns(items) {
