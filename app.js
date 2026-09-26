@@ -77,6 +77,7 @@ const SECTION_REPORT_EXPORT_COLUMNS = [
     { id: 'correct', label: 'Correct', header: 'Correct', selected: false, value: row => percentLabel(row.correct, row.total) },
     { id: 'partial', label: 'Partial', header: 'Partial', selected: false, value: row => percentLabel(row.partial, row.total) },
     { id: 'wrong', label: 'Wrong', header: 'Wrong', selected: true, value: row => percentLabel(row.wrong, row.total) },
+    { id: 'wrongOption', label: 'Most Wrong Option', header: 'Most Wrong Option', selected: true, value: row => row.mostWrongOption || '-' },
     { id: 'pending', label: 'Needs Review', header: 'Needs Review', selected: false, value: row => row.pending }
 ];
 
@@ -1558,6 +1559,7 @@ function buildQuestionColumnsForSectionReport(items) {
 
 function questionColumnStatsForSectionReport(items, column) {
     const stats = createAnalysisStats(column.title);
+    const wrongOptionCounts = new Map();
     let topic = '';
     let type = '';
     items.forEach(submission => {
@@ -1565,9 +1567,11 @@ function questionColumnStatsForSectionReport(items, column) {
         if (!answer) return;
         if (!topic) topic = topicLabelForAnswer(answer, submission);
         if (!type) type = normalizedQuestionType(answer);
+        addWrongOptionSelections(wrongOptionCounts, answer);
         addAnswerToStats(stats, submission, answer, index);
     });
     finalizeAnalysisStats(stats);
+    const mostWrongOption = mostSelectedWrongOption(wrongOptionCounts);
     return {
         key: column.key,
         title: column.title,
@@ -1582,8 +1586,89 @@ function questionColumnStatsForSectionReport(items, column) {
         pending: stats.pending,
         correctPercent: percentValue(stats.correct, stats.total) * 100,
         partialPercent: percentValue(stats.partial, stats.total) * 100,
-        wrongPercent: percentValue(stats.wrong, stats.total) * 100
+        wrongPercent: percentValue(stats.wrong, stats.total) * 100,
+        mostWrongOptionLabel: mostWrongOption?.label || '',
+        mostWrongOptionCount: mostWrongOption?.count || 0,
+        mostWrongOption: mostWrongOption
+            ? `${mostWrongOption.label} (${mostWrongOption.count})`
+            : '-'
     };
+}
+
+function addWrongOptionSelections(counts, answer) {
+    if (answer?.isCorrect !== false || normalizedQuestionType(answer) !== 'mcq') return;
+    wrongOptionLabelsForAnswer(answer).forEach(label => {
+        if (!label) return;
+        counts.set(label, (counts.get(label) || 0) + 1);
+    });
+}
+
+function wrongOptionLabelsForAnswer(answer) {
+    const selectedOptions = Array.isArray(answer?.selectedOptions) ? answer.selectedOptions : [];
+    const labels = selectedOptions
+        .map(selection => optionLabelForSelection(answer, selection))
+        .filter(Boolean);
+    const response = answerResponseText(answer).trim();
+    if (labels.length && !labels.every(label => /^\d+$/.test(label))) return labels;
+    return response ? [response] : labels;
+}
+
+function optionLabelForSelection(answer, selection) {
+    const question = questionMetadataForAnswer(answer);
+    const options = Array.isArray(question?.options) ? question.options : [];
+    const optionIndex = optionIndexForSelection(selection, options.length);
+    if (Number.isInteger(optionIndex) && options[optionIndex]) {
+        const option = options[optionIndex];
+        if (option?.correct === true) return '';
+        const optionText = htmlToText(option?.html || option?.text || option?.label || '').trim();
+        return `Option ${optionLetter(optionIndex)}${optionText ? `: ${optionText}` : ''}`;
+    }
+    return selectionText(selection);
+}
+
+function optionIndexForSelection(selection, optionCount = 0) {
+    if (typeof selection === 'number' && Number.isInteger(selection)) {
+        return normalizeOptionIndex(selection, optionCount);
+    }
+    if (selection && typeof selection === 'object') {
+        const objectIndex = selection.index ?? selection.optionIndex ?? selection.value;
+        if (typeof objectIndex === 'number' || /^\d+$/.test(String(objectIndex ?? '').trim())) {
+            return normalizeOptionIndex(Number(objectIndex), optionCount);
+        }
+    }
+    const value = selectionText(selection);
+    if (!value) return null;
+    if (/^\d+$/.test(value)) return normalizeOptionIndex(Number(value), optionCount);
+    const optionMatch = value.match(/(?:option\s*)?([A-D])\b/i);
+    if (optionMatch) return optionMatch[1].toUpperCase().charCodeAt(0) - 65;
+    return null;
+}
+
+function normalizeOptionIndex(index, optionCount) {
+    if (!optionCount || (index >= 0 && index < optionCount)) return index;
+    if (index >= 1 && index <= optionCount) return index - 1;
+    return null;
+}
+
+function selectionText(selection) {
+    if (selection && typeof selection === 'object') {
+        return htmlToText(selection.html || selection.text || selection.label || selection.value || '').trim();
+    }
+    return htmlToText(selection).trim();
+}
+
+function optionLetter(index) {
+    return String.fromCharCode(65 + index);
+}
+
+function mostSelectedWrongOption(counts) {
+    let winner = null;
+    counts.forEach((count, label) => {
+        if (!winner || count > winner.count || (count === winner.count && compareText(label, winner.label) < 0)) {
+            winner = { label, count };
+        }
+    });
+    return winner;
 }
 
 function answerForSectionReportQuestion(submission, questionKey) {
@@ -1622,6 +1707,7 @@ function sectionQuestionReportTable(rows) {
                     <th scope="col">${sectionReportSortHeader('Correct', 'correct')}</th>
                     <th scope="col">${sectionReportSortHeader('Partial', 'partial')}</th>
                     <th scope="col">${sectionReportSortHeader('Wrong', 'wrong')}</th>
+                    <th scope="col">${sectionReportSortHeader('Most Wrong Option', 'wrongOption')}</th>
                     <th scope="col">${sectionReportSortHeader('Needs Review', 'pending')}</th>
                 </tr>
             </thead>
@@ -1636,6 +1722,7 @@ function sectionQuestionReportTable(rows) {
                         <td>${percentLabel(row.correct, row.total)}</td>
                         <td>${percentLabel(row.partial, row.total)}</td>
                         <td>${percentLabel(row.wrong, row.total)}</td>
+                        <td class="analysis-text-cell">${esc(row.mostWrongOption || '-')}</td>
                         <td>${row.pending}</td>
                     </tr>
                 `).join('')}
@@ -1654,7 +1741,7 @@ function handleSectionReportSortClick(event) {
     const button = event.target.closest('[data-section-report-sort]');
     if (!button) return;
     const key = button.dataset.sectionReportSort;
-    const defaultDirection = ['seen', 'avg', 'correct', 'partial', 'wrong', 'pending'].includes(key) ? 'desc' : 'asc';
+    const defaultDirection = ['seen', 'avg', 'correct', 'partial', 'wrong', 'wrongOption', 'pending'].includes(key) ? 'desc' : 'asc';
     sectionReportSort = sectionReportSort.key === key
         ? { key, direction: sectionReportSort.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: defaultDirection };
@@ -1671,6 +1758,7 @@ function compareSectionQuestionReportRows(a, b) {
     else if (sort.key === 'correct') result = a.correctPercent - b.correctPercent;
     else if (sort.key === 'partial') result = a.partialPercent - b.partialPercent;
     else if (sort.key === 'wrong') result = a.wrongPercent - b.wrongPercent;
+    else if (sort.key === 'wrongOption') result = (a.mostWrongOptionCount - b.mostWrongOptionCount) || compareText(a.mostWrongOptionLabel, b.mostWrongOptionLabel);
     else if (sort.key === 'pending') result = a.pending - b.pending;
     else result = a.avgPercent - b.avgPercent;
     return sort.direction === 'asc' ? result : -result;
