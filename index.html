@@ -134,6 +134,24 @@
                         <input id="sectionReportWrongMin" type="number" min="0" max="100" step="1" value="40" />
                     </label>
                 </div>
+                <div class="filters-grid section-report-secondary-filters">
+                    <label class="field">
+                        <span>From Date</span>
+                        <input id="sectionReportStartDate" type="date" />
+                    </label>
+                    <label class="field">
+                        <span>To Date</span>
+                        <input id="sectionReportEndDate" type="date" />
+                    </label>
+                    <div class="field section-report-band-field">
+                        <span>Performance Band</span>
+                        <div id="sectionReportBandFilters" class="band-filter-list">
+                            <label><input type="checkbox" value="strong" checked /> Strong</label>
+                            <label><input type="checkbox" value="middle" checked /> Middle / Inconsistent</label>
+                            <label><input type="checkbox" value="support" checked /> Needs Intensive Support</label>
+                        </div>
+                    </div>
+                </div>
                 <div class="section-report-export">
                     <details class="export-columns-disclosure">
                         <summary>Export Columns</summary>

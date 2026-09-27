@@ -154,6 +154,9 @@ const els = {
     sectionReportQuestionType: $('sectionReportQuestionType'),
     sectionReportSeenMin: $('sectionReportSeenMin'),
     sectionReportWrongMin: $('sectionReportWrongMin'),
+    sectionReportStartDate: $('sectionReportStartDate'),
+    sectionReportEndDate: $('sectionReportEndDate'),
+    sectionReportBandFilters: $('sectionReportBandFilters'),
     sectionReportExportFields: $('sectionReportExportFields'),
     exportSectionReportCsvBtn: $('exportSectionReportCsvBtn'),
     exportSectionReportPdfBtn: $('exportSectionReportPdfBtn'),
@@ -240,6 +243,7 @@ if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
 }
 
+initializeSectionReportFilters();
 bindEvents();
 
 onAuthStateChanged(auth, async (user) => {
@@ -294,6 +298,9 @@ function bindEvents() {
     els.sectionReportQuestionType.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportSeenMin.addEventListener('input', renderSectionQuestionReport);
     els.sectionReportWrongMin.addEventListener('input', renderSectionQuestionReport);
+    els.sectionReportStartDate.addEventListener('change', renderSectionQuestionReport);
+    els.sectionReportEndDate.addEventListener('change', renderSectionQuestionReport);
+    els.sectionReportBandFilters.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
     els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
     els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
@@ -1427,13 +1434,68 @@ function renderSectionQuestionReport() {
         }
         return;
     }
-    const rows = filteredSectionQuestionRows(sectionQuestionReportRows(sectionReportSubmissions))
+    const filteredSubmissions = filteredSectionReportSubmissions();
+    if (!filteredSubmissions.length) {
+        els.sectionReportTimeline.innerHTML = '<div class="empty-card">No submissions match the selected date range and performance bands.</div>';
+        els.sectionReportList.innerHTML = '<div class="empty-card">No submissions match these section report filters.</div>';
+        return;
+    }
+    const rows = filteredSectionQuestionRows(sectionQuestionReportRows(filteredSubmissions))
         .sort(compareSectionQuestionReportRows);
-    els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
+    els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(filteredSubmissions);
     els.sectionReportList.className = 'submission-table-wrap analysis-table-wrap';
     els.sectionReportList.innerHTML = rows.length
         ? sectionQuestionReportTable(rows)
         : '<div class="empty-card">No questions match these report filters.</div>';
+}
+
+function initializeSectionReportFilters() {
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(start.getDate() - 30);
+    if (els.sectionReportStartDate) els.sectionReportStartDate.value = dateInputValue(start);
+    if (els.sectionReportEndDate) els.sectionReportEndDate.value = dateInputValue(today);
+}
+
+function filteredSectionReportSubmissions() {
+    const startMillis = dateInputStartMillis(els.sectionReportStartDate.value);
+    const endMillis = dateInputEndMillis(els.sectionReportEndDate.value);
+    const selectedBands = selectedSectionReportBands();
+    if (!selectedBands.size) return [];
+    return sectionReportSubmissions.filter(submission => {
+        const submittedMillis = submissionSubmittedMillis(submission);
+        if (startMillis !== null && (!submittedMillis || submittedMillis < startMillis)) return false;
+        if (endMillis !== null && (!submittedMillis || submittedMillis > endMillis)) return false;
+        if (!selectedBands.has(performanceBand(submission).key)) return false;
+        return true;
+    });
+}
+
+function selectedSectionReportBands() {
+    return new Set(Array.from(els.sectionReportBandFilters.querySelectorAll('input:checked')).map(input => input.value));
+}
+
+function submissionSubmittedMillis(submission) {
+    return Number(submission.submittedAtMillis || submission.submittedAt?.toMillis?.() || submission.submittedAt?.seconds * 1000 || submission.createdAt?.toMillis?.() || submission.createdAt?.seconds * 1000 || 0);
+}
+
+function dateInputValue(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function dateInputStartMillis(value) {
+    if (!value) return null;
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function dateInputEndMillis(value) {
+    if (!value) return null;
+    const date = new Date(`${value}T23:59:59.999`);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
 }
 
 function sectionStudentTimelineHtml(items) {
@@ -1539,7 +1601,7 @@ function renderSectionReportExportFields() {
 
 function currentSectionQuestionReportRows() {
     if (!sectionReportSubmissions.length) return [];
-    return filteredSectionQuestionRows(sectionQuestionReportRows(sectionReportSubmissions))
+    return filteredSectionQuestionRows(sectionQuestionReportRows(filteredSectionReportSubmissions()))
         .sort(compareSectionQuestionReportRows);
 }
 
