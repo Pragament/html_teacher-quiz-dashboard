@@ -171,6 +171,7 @@ const els = {
     sectionReportPrompts: $('sectionReportPrompts'),
     sectionReportList: $('sectionReportList'),
     submissionSummary: $('submissionSummary'),
+    sessionReportPrompts: $('sessionReportPrompts'),
     submissionList: $('submissionList'),
     detailDialog: $('detailDialog'),
     detailTitle: $('detailTitle'),
@@ -309,6 +310,7 @@ function bindEvents() {
     els.sectionReportBandFilters.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportTimeline.addEventListener('click', handleSectionReportBandLegendClick);
     els.sectionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
+    els.sessionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
     els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
     els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
     els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
@@ -1123,6 +1125,7 @@ function renderSelectedClassroom() {
         els.selectedClassroomMeta.textContent = '';
         els.enabledChip.textContent = 'No quiz session';
         els.enabledChip.className = 'status-chip';
+        els.sessionReportPrompts.innerHTML = '<div class="empty-card">Choose a quiz session to generate remedial teaching prompts.</div>';
         setStats(0, 0, '-', 0);
         return;
     }
@@ -1250,6 +1253,7 @@ function renderSubmissions() {
     const filtered = filteredSubmissions();
     const sorted = sortedSubmissions(filtered);
     els.submissionSummary.textContent = `${filtered.length} visible of ${submissions.length} loaded submissions`;
+    renderSessionReportPrompts(filtered);
     els.studentAnalysisBtn.classList.toggle('active', submissionViewMode === 'students');
     els.topicAnalysisBtn.classList.toggle('active', submissionViewMode === 'topics');
     els.questionAnalysisBtn.classList.toggle('active', submissionViewMode === 'questions');
@@ -1273,6 +1277,30 @@ function renderSubmissions() {
     });
     document.querySelectorAll('[data-analysis-sort]').forEach(btn => {
         btn.addEventListener('click', () => setAnalysisSort(btn.dataset.analysisSort));
+    });
+}
+
+function renderSessionReportPrompts(items) {
+    const classroom = findClassroom(activeClassroomId);
+    if (!classroom) {
+        els.sessionReportPrompts.innerHTML = '<div class="empty-card">Choose a quiz session to generate remedial teaching prompts.</div>';
+        return;
+    }
+    if (!submissions.length) {
+        els.sessionReportPrompts.innerHTML = '<div class="empty-card">Load submissions to generate quiz-session remedial teaching prompts.</div>';
+        return;
+    }
+    if (!items.length) {
+        els.sessionReportPrompts.innerHTML = '<div class="empty-card">No prompts available because no submissions match the current quiz-session filters.</div>';
+        return;
+    }
+    const rows = sectionQuestionReportRows(items)
+        .sort((a, b) => b.wrongPercent - a.wrongPercent || b.seenBy - a.seenBy);
+    els.sessionReportPrompts.innerHTML = sectionReportPromptListHtml(items, rows, {
+        title: 'Quiz Session Remedial Prompts',
+        description: 'Copy prompts based only on the current quiz session submissions.',
+        contextLabel: quizSessionLabelForClassroom(classroom),
+        contextType: 'Quiz session'
     });
 }
 
@@ -1578,14 +1606,16 @@ function handleSectionReportBandLegendClick(event) {
     renderSectionQuestionReport();
 }
 
-function sectionReportPromptListHtml(items, rows) {
-    const prompts = sectionReportPrompts(items, rows);
+function sectionReportPromptListHtml(items, rows, options = {}) {
+    const prompts = sectionReportPrompts(items, rows, options);
     if (!prompts.length) return '<div class="empty-card">No prompt suggestions available for the current report filters.</div>';
+    const title = options.title || 'Remedial Teaching Prompts';
+    const description = options.description || 'Copy prompts for Identify, Diagnose, Reteach, Practise, and Retest planning.';
     return `
         <div class="section-report-block-head">
             <div>
-                <h3>Remedial Teaching Prompts</h3>
-                <p>Copy prompts for Identify, Diagnose, Reteach, Practise, and Retest planning.</p>
+                <h3>${esc(title)}</h3>
+                <p>${esc(description)}</p>
             </div>
         </div>
         <div class="section-prompt-grid">
@@ -1603,8 +1633,8 @@ function sectionReportPromptListHtml(items, rows) {
     `;
 }
 
-function sectionReportPrompts(items, rows) {
-    const context = sectionReportPromptContext(items, rows);
+function sectionReportPrompts(items, rows, options = {}) {
+    const context = sectionReportPromptContext(items, rows, options);
     if (!context.focusQuestions.length && !context.focusTopics.length) return [];
     return [
         {
@@ -1640,7 +1670,7 @@ function sectionReportPrompts(items, rows) {
     ];
 }
 
-function sectionReportPromptContext(items, rows) {
+function sectionReportPromptContext(items, rows, options = {}) {
     const studentRows = sectionStudentTimelineRows(items);
     const bandCounts = SECTION_REPORT_BANDS.map(({ key, samplePercent }) => {
         const band = performanceBand(samplePercent);
@@ -1668,11 +1698,12 @@ function sectionReportPromptContext(items, rows) {
         return `${index + 1}. ${row.title} [${questionTypeLabel(row.type || 'unknown')}; ${row.topic}; seen ${row.seenBy}; wrong ${Math.round(row.wrongPercent)}%; avg ${row.avgPercent}%${misconception}]`;
     });
     const topicLines = focusTopics.map((topic, index) => `${index + 1}. ${topic.topic} [wrong ${topic.wrongPercent}%; attempts ${topic.total}]`);
-    const section = sectionReportContextLabel();
+    const contextType = options.contextType || 'Section';
+    const contextLabel = options.contextLabel || sectionReportContextLabel();
     const range = `${els.sectionReportStartDate.value || 'Any start'} to ${els.sectionReportEndDate.value || 'Any end'}`;
     const summary = [
-        `Section: ${section}`,
-        `Date range: ${range}`,
+        `${contextType}: ${contextLabel}`,
+        options.contextType === 'Quiz session' ? '' : `Date range: ${range}`,
         `Visible submissions: ${items.length}`,
         `Visible students by band: ${bandCounts}`,
         '',
@@ -1681,7 +1712,7 @@ function sectionReportPromptContext(items, rows) {
         '',
         'Focus questions:',
         questionLines.join('\n') || '- Not enough question data.'
-    ].join('\n');
+    ].filter(line => line !== '').join('\n');
     return { summary, focusQuestions, focusTopics, studentRows };
 }
 
@@ -1689,7 +1720,8 @@ async function handleSectionReportPromptCopy(event) {
     const button = event.target.closest('[data-copy-section-prompt]');
     if (!button) return;
     const id = button.dataset.copySectionPrompt;
-    const textarea = Array.from(els.sectionReportPrompts.querySelectorAll('[data-section-prompt-text]'))
+    const root = button.closest('.section-report-prompts') || document;
+    const textarea = Array.from(root.querySelectorAll('[data-section-prompt-text]'))
         .find(item => item.dataset.sectionPromptText === id);
     const text = textarea?.value || '';
     if (!text) return;
@@ -2966,6 +2998,10 @@ function masteryStatusRank(row) {
 function quizSessionLabel(submission) {
     const classroom = findClassroom(submission.classroomId);
     return classroom?.className || submission.className || submission.classroomName || submission.classroomId || 'Quiz session';
+}
+
+function quizSessionLabelForClassroom(classroom) {
+    return classroom?.className || classroom?.classCode || classroom?.id || 'Quiz session';
 }
 
 function shortDate(value) {
