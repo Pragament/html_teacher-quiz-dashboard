@@ -159,6 +159,7 @@ const els = {
     exportSectionReportPdfBtn: $('exportSectionReportPdfBtn'),
     refreshSectionReportBtn: $('refreshSectionReportBtn'),
     sectionReportSummary: $('sectionReportSummary'),
+    sectionReportTimeline: $('sectionReportTimeline'),
     sectionReportList: $('sectionReportList'),
     submissionSummary: $('submissionSummary'),
     submissionList: $('submissionList'),
@@ -1143,6 +1144,7 @@ function renderSectionReportOptions() {
     if (!sections.length) {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = 'No sections found where you have viewer or admin access.';
+        els.sectionReportTimeline.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
     }
 }
@@ -1157,6 +1159,7 @@ async function loadSectionQuestionReport() {
     }
     els.refreshSectionReportBtn.disabled = true;
     els.sectionReportSummary.textContent = `Loading enabled quiz sessions for ${sectionLabel(section)}...`;
+    els.sectionReportTimeline.innerHTML = '<div class="empty-card">Loading student timeline progress...</div>';
     els.sectionReportList.innerHTML = '<div class="empty-card">Loading section question report...</div>';
     try {
         const classroomSnap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('sectionId', '==', sectionId)));
@@ -1170,6 +1173,7 @@ async function loadSectionQuestionReport() {
         for (const [index, classroom] of enabledClassrooms.entries()) {
             const percent = Math.round((index / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processing ${index + 1}/${enabledClassrooms.length} quiz sessions (${percent}%) · ${classroom.className || classroom.classCode || classroom.id}`;
+            els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${percent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${percent}%</div>`;
             const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
             if (classroom.classCode && classroom.classCode !== classroom.id) {
@@ -1177,14 +1181,24 @@ async function loadSectionQuestionReport() {
             }
             for (const submissionQuery of queries) {
                 const snap = await getDocs(submissionQuery);
-                snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    byId.set(d.id, {
+                        id: d.id,
+                        ...data,
+                        className: data.className || classroom.className || '',
+                        classroomName: data.classroomName || classroom.className || classroom.classCode || classroom.id
+                    });
+                });
             }
             const donePercent = Math.round(((index + 1) / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processed ${index + 1}/${enabledClassrooms.length} quiz sessions (${donePercent}%)`;
+            els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${donePercent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${donePercent}%</div>`;
         }
         sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
         els.sectionReportSummary.textContent = `${sectionLabel(section)} · Quiz sessions loaded. Loading question metadata...`;
+        els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
         els.sectionReportList.innerHTML = '<div class="empty-card">Loading question metadata...</div>';
         await loadQuestionMetadataForSubmissions(sectionReportSubmissions, ({ loaded, total, phase }) => {
             const percent = total ? Math.round((loaded / total) * 100) : 100;
@@ -1197,6 +1211,7 @@ async function loadSectionQuestionReport() {
     } catch (error) {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = error.message || 'Unable to load section question report';
+        els.sectionReportTimeline.innerHTML = '<div class="empty-card">Unable to load student timeline progress.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">Unable to load section question report.</div>';
     } finally {
         els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
@@ -1407,16 +1422,110 @@ function questionAnalysisTable(items) {
 function renderSectionQuestionReport() {
     if (!sectionReportSubmissions.length) {
         if (els.sectionReportSectionId.value) {
+            els.sectionReportTimeline.innerHTML = '<div class="empty-card">No student timeline available for enabled quiz sessions in this section.</div>';
             els.sectionReportList.innerHTML = '<div class="empty-card">No submissions found for enabled quiz sessions in this section.</div>';
         }
         return;
     }
     const rows = filteredSectionQuestionRows(sectionQuestionReportRows(sectionReportSubmissions))
         .sort(compareSectionQuestionReportRows);
+    els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
     els.sectionReportList.className = 'submission-table-wrap analysis-table-wrap';
     els.sectionReportList.innerHTML = rows.length
         ? sectionQuestionReportTable(rows)
         : '<div class="empty-card">No questions match these report filters.</div>';
+}
+
+function sectionStudentTimelineHtml(items) {
+    const rows = sectionStudentTimelineRows(items);
+    if (!rows.length) return '<div class="empty-card">No scored student submissions found for this section.</div>';
+    const allAttempts = rows.reduce((sum, row) => sum + row.submissions.length, 0);
+    return `
+        <div class="section-report-block-head">
+            <div>
+                <h3>Student Timeline Progress</h3>
+                <p>${rows.length} student${rows.length === 1 ? '' : 's'} · ${allAttempts} submission${allAttempts === 1 ? '' : 's'} across enabled quiz sessions</p>
+            </div>
+            <div class="timeline-band-legend" aria-label="Performance bands">
+                ${performanceBandChip(75)}
+                ${performanceBandChip(50)}
+                ${performanceBandChip(0)}
+            </div>
+        </div>
+        <div class="section-student-timeline-list">
+            ${rows.map(row => {
+                const averageBand = performanceBand(row.averagePercent);
+                const latestBand = performanceBand(row.latestPercent);
+                return `
+                    <article class="section-student-timeline-card ${esc(averageBand.cardClass)}">
+                        <div class="section-student-timeline-head">
+                            <div>
+                                <strong>${esc(row.studentName)}</strong>
+                                <p>${esc(row.admissionNo || 'No roll')} · ${row.submissions.length} submission${row.submissions.length === 1 ? '' : 's'} · Avg ${row.averagePercent}%</p>
+                            </div>
+                            <div class="timeline-band-stack">
+                                <span class="timeline-band-note">Latest</span>
+                                <span class="performance-chip ${esc(latestBand.className)}">${esc(latestBand.label)}</span>
+                            </div>
+                        </div>
+                        <div class="section-student-timeline-track">
+                            ${row.submissions.map(submission => sectionStudentTimelinePoint(submission)).join('')}
+                        </div>
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function sectionStudentTimelineRows(items) {
+    const students = new Map();
+    items
+        .filter(submission => scoreDetails(submission).maxMarks > 0)
+        .forEach(submission => {
+            const key = studentIdentityKey(submission);
+            if (!students.has(key)) {
+                students.set(key, {
+                    key,
+                    studentName: submission.studentName || 'Student',
+                    admissionNo: submission.admissionNo || '',
+                    submissions: []
+                });
+            }
+            students.get(key).submissions.push(submission);
+        });
+    const rows = Array.from(students.values()).map(row => {
+        row.submissions.sort((a, b) => (a.submittedAtMillis || 0) - (b.submittedAtMillis || 0));
+        const percentages = row.submissions.map(scorePercent);
+        row.averagePercent = percentages.length
+            ? Math.round(percentages.reduce((sum, percent) => sum + percent, 0) / percentages.length)
+            : 0;
+        row.latestPercent = percentages.length ? percentages[percentages.length - 1] : 0;
+        return row;
+    });
+    return rows.sort((a, b) => performanceBand(b.latestPercent).rank - performanceBand(a.latestPercent).rank
+        || b.latestPercent - a.latestPercent
+        || compareText(a.studentName, b.studentName));
+}
+
+function studentIdentityKey(submission) {
+    const studentKey = String(submission.studentKey || '').trim();
+    if (studentKey) return studentKey;
+    const admissionNo = String(submission.admissionNo || '').trim();
+    if (admissionNo) return `${submission.sectionId || ''}:${admissionNo}`;
+    return submission.id || `${submission.studentName || 'Student'}:${submission.submittedAtMillis || ''}`;
+}
+
+function sectionStudentTimelinePoint(submission) {
+    const percent = scorePercent(submission);
+    const band = performanceBand(percent);
+    const title = `${formatDate(submission.submittedAtMillis)} · ${quizSessionLabel(submission)} · ${scoreLabel(submission)}`;
+    return `
+        <span class="section-timeline-point" title="${esc(title)}">
+            <span class="timeline-score-dot ${esc(band.className)}">${percent}%</span>
+            <small>${esc(shortDate(submission.submittedAtMillis))}</small>
+        </span>
+    `;
 }
 
 function renderSectionReportExportFields() {
