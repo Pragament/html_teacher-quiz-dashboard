@@ -168,6 +168,7 @@ const els = {
     refreshSectionReportBtn: $('refreshSectionReportBtn'),
     sectionReportSummary: $('sectionReportSummary'),
     sectionReportTimeline: $('sectionReportTimeline'),
+    sectionReportPrompts: $('sectionReportPrompts'),
     sectionReportList: $('sectionReportList'),
     submissionSummary: $('submissionSummary'),
     submissionList: $('submissionList'),
@@ -307,6 +308,7 @@ function bindEvents() {
     els.sectionReportEndDate.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportBandFilters.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportTimeline.addEventListener('click', handleSectionReportBandLegendClick);
+    els.sectionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
     els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
     els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
     els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
@@ -1158,6 +1160,7 @@ function renderSectionReportOptions() {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = 'No sections found where you have viewer or admin access.';
         els.sectionReportTimeline.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
+        els.sectionReportPrompts.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
     }
 }
@@ -1173,6 +1176,7 @@ async function loadSectionQuestionReport() {
     els.refreshSectionReportBtn.disabled = true;
     els.sectionReportSummary.textContent = `Loading enabled quiz sessions for ${sectionLabel(section)}...`;
     els.sectionReportTimeline.innerHTML = '<div class="empty-card">Loading student timeline progress...</div>';
+    els.sectionReportPrompts.innerHTML = '<div class="empty-card">Loading remedial teaching prompts...</div>';
     els.sectionReportList.innerHTML = '<div class="empty-card">Loading section question report...</div>';
     try {
         const classroomSnap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('sectionId', '==', sectionId)));
@@ -1187,6 +1191,7 @@ async function loadSectionQuestionReport() {
             const percent = Math.round((index / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processing ${index + 1}/${enabledClassrooms.length} quiz sessions (${percent}%) · ${classroom.className || classroom.classCode || classroom.id}`;
             els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${percent}%</div>`;
+            els.sectionReportPrompts.innerHTML = `<div class="empty-card">Loading remedial teaching prompts... ${percent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${percent}%</div>`;
             const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
             if (classroom.classCode && classroom.classCode !== classroom.id) {
@@ -1207,11 +1212,13 @@ async function loadSectionQuestionReport() {
             const donePercent = Math.round(((index + 1) / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processed ${index + 1}/${enabledClassrooms.length} quiz sessions (${donePercent}%)`;
             els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${donePercent}%</div>`;
+            els.sectionReportPrompts.innerHTML = `<div class="empty-card">Loading remedial teaching prompts... ${donePercent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${donePercent}%</div>`;
         }
         sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
         els.sectionReportSummary.textContent = `${sectionLabel(section)} · Quiz sessions loaded. Loading question metadata...`;
         els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
+        els.sectionReportPrompts.innerHTML = '<div class="empty-card">Preparing remedial teaching prompts...</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">Loading question metadata...</div>';
         await loadQuestionMetadataForSubmissions(sectionReportSubmissions, ({ loaded, total, phase }) => {
             const percent = total ? Math.round((loaded / total) * 100) : 100;
@@ -1225,6 +1232,7 @@ async function loadSectionQuestionReport() {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = error.message || 'Unable to load section question report';
         els.sectionReportTimeline.innerHTML = '<div class="empty-card">Unable to load student timeline progress.</div>';
+        els.sectionReportPrompts.innerHTML = '<div class="empty-card">Unable to generate remedial teaching prompts.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">Unable to load section question report.</div>';
     } finally {
         els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
@@ -1436,6 +1444,7 @@ function renderSectionQuestionReport() {
     if (!sectionReportSubmissions.length) {
         if (els.sectionReportSectionId.value) {
             els.sectionReportTimeline.innerHTML = '<div class="empty-card">No student timeline available for enabled quiz sessions in this section.</div>';
+            els.sectionReportPrompts.innerHTML = '<div class="empty-card">No remedial teaching prompts available until submissions are loaded.</div>';
             els.sectionReportList.innerHTML = '<div class="empty-card">No submissions found for enabled quiz sessions in this section.</div>';
         }
         return;
@@ -1443,12 +1452,14 @@ function renderSectionQuestionReport() {
     const filteredSubmissions = filteredSectionReportSubmissions();
     if (!filteredSubmissions.length) {
         els.sectionReportTimeline.innerHTML = '<div class="empty-card">No submissions match the selected date range and performance bands.</div>';
+        els.sectionReportPrompts.innerHTML = '<div class="empty-card">No prompts available because no submissions match these filters.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">No submissions match these section report filters.</div>';
         return;
     }
     const rows = filteredSectionQuestionRows(sectionQuestionReportRows(filteredSubmissions))
         .sort(compareSectionQuestionReportRows);
     els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(filteredSubmissions);
+    els.sectionReportPrompts.innerHTML = sectionReportPromptListHtml(filteredSubmissions, rows);
     els.sectionReportList.className = 'submission-table-wrap analysis-table-wrap';
     els.sectionReportList.innerHTML = rows.length
         ? sectionQuestionReportTable(rows)
@@ -1565,6 +1576,132 @@ function handleSectionReportBandLegendClick(event) {
     if (!checkbox) return;
     checkbox.checked = !checkbox.checked;
     renderSectionQuestionReport();
+}
+
+function sectionReportPromptListHtml(items, rows) {
+    const prompts = sectionReportPrompts(items, rows);
+    if (!prompts.length) return '<div class="empty-card">No prompt suggestions available for the current report filters.</div>';
+    return `
+        <div class="section-report-block-head">
+            <div>
+                <h3>Remedial Teaching Prompts</h3>
+                <p>Copy prompts for Identify, Diagnose, Reteach, Practise, and Retest planning.</p>
+            </div>
+        </div>
+        <div class="section-prompt-grid">
+            ${prompts.map(prompt => `
+                <article class="section-prompt-card">
+                    <div class="section-prompt-head">
+                        <strong>${esc(prompt.title)}</strong>
+                        <button class="btn small" type="button" data-copy-section-prompt="${esc(prompt.id)}">Copy</button>
+                    </div>
+                    <p>${esc(prompt.description)}</p>
+                    <textarea readonly data-section-prompt-text="${esc(prompt.id)}">${esc(prompt.text)}</textarea>
+                </article>
+            `).join('')}
+        </div>
+    `;
+}
+
+function sectionReportPrompts(items, rows) {
+    const context = sectionReportPromptContext(items, rows);
+    if (!context.focusQuestions.length && !context.focusTopics.length) return [];
+    return [
+        {
+            id: 'identify',
+            title: 'Identify',
+            description: 'Find priority learning gaps and student groups.',
+            text: `Act as a grade 10 teacher. Based on this quiz performance report, identify the top learning gaps to address first. Group students into Strong, Middle / Inconsistent, and Needs Intensive Support. Keep the output actionable for tomorrow's lesson.\n\n${context.summary}`
+        },
+        {
+            id: 'diagnose',
+            title: 'Diagnose',
+            description: 'Explain likely misconceptions behind wrong answers.',
+            text: `Act as a diagnostic assessment expert. Use the most-selected wrong options and high-wrong questions below to infer likely misconceptions. For each misconception, suggest one quick teacher question or mini-task to confirm it before reteaching.\n\n${context.summary}`
+        },
+        {
+            id: 'reteach',
+            title: 'Reteach',
+            description: 'Plan targeted, interactive, joyful revision.',
+            text: `Create a targeted revision plan for this class. Make it interactive, joyful, and classroom-ready. Include a 10-minute concept reset, peer activity, teacher checks, and differentiated support for Strong, Middle / Inconsistent, and Needs Intensive Support students.\n\n${context.summary}`
+        },
+        {
+            id: 'practise',
+            title: 'Practise',
+            description: 'Generate scaffolded practice activities.',
+            text: `Design scaffolded practice for the focus topics below. Include warm-up, guided practice, pair activity, independent practice, and challenge extension. Make the activities engaging and suitable for grade 10. Include answer-check prompts teachers can use live.\n\n${context.summary}`
+        },
+        {
+            id: 'retest',
+            title: 'Retest',
+            description: 'Create follow-up checks and exit tickets.',
+            text: `Create a follow-up assessment plan for these gaps. Include a 5-question exit ticket, a short retest blueprint, success criteria, and how to decide whether to reteach again. Include MCQ misconception checks where wrong options reveal student thinking.\n\n${context.summary}`
+        }
+    ];
+}
+
+function sectionReportPromptContext(items, rows) {
+    const studentRows = sectionStudentTimelineRows(items);
+    const bandCounts = SECTION_REPORT_BANDS.map(({ key, samplePercent }) => {
+        const band = performanceBand(samplePercent);
+        const count = studentRows.filter(row => performanceBand(row.averagePercent).key === key).length;
+        return `${band.label}: ${count}`;
+    }).join(', ');
+    const focusQuestions = [...rows]
+        .sort((a, b) => b.wrongPercent - a.wrongPercent || b.seenBy - a.seenBy)
+        .slice(0, 5);
+    const topicMap = new Map();
+    rows.forEach(row => {
+        const key = row.topic || 'Unmapped';
+        const item = topicMap.get(key) || { topic: key, seen: 0, wrong: 0, total: 0 };
+        item.seen += row.seenBy;
+        item.wrong += row.wrong;
+        item.total += row.total;
+        topicMap.set(key, item);
+    });
+    const focusTopics = Array.from(topicMap.values())
+        .map(topic => ({ ...topic, wrongPercent: topic.total ? Math.round((topic.wrong / topic.total) * 100) : 0 }))
+        .sort((a, b) => b.wrongPercent - a.wrongPercent || b.seen - a.seen)
+        .slice(0, 5);
+    const questionLines = focusQuestions.map((row, index) => {
+        const misconception = row.mostWrongOption && row.mostWrongOption !== '-' ? `; most-selected wrong option: ${row.mostWrongOption}` : '';
+        return `${index + 1}. ${row.title} [${questionTypeLabel(row.type || 'unknown')}; ${row.topic}; seen ${row.seenBy}; wrong ${Math.round(row.wrongPercent)}%; avg ${row.avgPercent}%${misconception}]`;
+    });
+    const topicLines = focusTopics.map((topic, index) => `${index + 1}. ${topic.topic} [wrong ${topic.wrongPercent}%; attempts ${topic.total}]`);
+    const section = sectionReportContextLabel();
+    const range = `${els.sectionReportStartDate.value || 'Any start'} to ${els.sectionReportEndDate.value || 'Any end'}`;
+    const summary = [
+        `Section: ${section}`,
+        `Date range: ${range}`,
+        `Visible submissions: ${items.length}`,
+        `Visible students by band: ${bandCounts}`,
+        '',
+        'Focus topics:',
+        topicLines.join('\n') || '- Not enough topic data.',
+        '',
+        'Focus questions:',
+        questionLines.join('\n') || '- Not enough question data.'
+    ].join('\n');
+    return { summary, focusQuestions, focusTopics, studentRows };
+}
+
+async function handleSectionReportPromptCopy(event) {
+    const button = event.target.closest('[data-copy-section-prompt]');
+    if (!button) return;
+    const id = button.dataset.copySectionPrompt;
+    const textarea = Array.from(els.sectionReportPrompts.querySelectorAll('[data-section-prompt-text]'))
+        .find(item => item.dataset.sectionPromptText === id);
+    const text = textarea?.value || '';
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+        toast('Prompt copied');
+    } catch {
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        toast('Prompt copied');
+    }
 }
 
 function sectionStudentTimelineRows(items) {
