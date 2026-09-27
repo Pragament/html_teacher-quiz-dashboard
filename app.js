@@ -159,6 +159,7 @@ const els = {
     exportSectionReportPdfBtn: $('exportSectionReportPdfBtn'),
     refreshSectionReportBtn: $('refreshSectionReportBtn'),
     sectionReportSummary: $('sectionReportSummary'),
+    sectionReportTimeline: $('sectionReportTimeline'),
     sectionReportList: $('sectionReportList'),
     submissionSummary: $('submissionSummary'),
     submissionList: $('submissionList'),
@@ -1143,6 +1144,7 @@ function renderSectionReportOptions() {
     if (!sections.length) {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = 'No sections found where you have viewer or admin access.';
+        els.sectionReportTimeline.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
     }
 }
@@ -1157,6 +1159,7 @@ async function loadSectionQuestionReport() {
     }
     els.refreshSectionReportBtn.disabled = true;
     els.sectionReportSummary.textContent = `Loading enabled quiz sessions for ${sectionLabel(section)}...`;
+    els.sectionReportTimeline.innerHTML = '<div class="empty-card">Loading student timeline progress...</div>';
     els.sectionReportList.innerHTML = '<div class="empty-card">Loading section question report...</div>';
     try {
         const classroomSnap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('sectionId', '==', sectionId)));
@@ -1170,6 +1173,7 @@ async function loadSectionQuestionReport() {
         for (const [index, classroom] of enabledClassrooms.entries()) {
             const percent = Math.round((index / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processing ${index + 1}/${enabledClassrooms.length} quiz sessions (${percent}%) · ${classroom.className || classroom.classCode || classroom.id}`;
+            els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${percent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${percent}%</div>`;
             const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
             if (classroom.classCode && classroom.classCode !== classroom.id) {
@@ -1177,14 +1181,24 @@ async function loadSectionQuestionReport() {
             }
             for (const submissionQuery of queries) {
                 const snap = await getDocs(submissionQuery);
-                snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    byId.set(d.id, {
+                        id: d.id,
+                        ...data,
+                        className: data.className || classroom.className || '',
+                        classroomName: data.classroomName || classroom.className || classroom.classCode || classroom.id
+                    });
+                });
             }
             const donePercent = Math.round(((index + 1) / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processed ${index + 1}/${enabledClassrooms.length} quiz sessions (${donePercent}%)`;
+            els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${donePercent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${donePercent}%</div>`;
         }
         sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
         els.sectionReportSummary.textContent = `${sectionLabel(section)} · Quiz sessions loaded. Loading question metadata...`;
+        els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
         els.sectionReportList.innerHTML = '<div class="empty-card">Loading question metadata...</div>';
         await loadQuestionMetadataForSubmissions(sectionReportSubmissions, ({ loaded, total, phase }) => {
             const percent = total ? Math.round((loaded / total) * 100) : 100;
@@ -1197,6 +1211,7 @@ async function loadSectionQuestionReport() {
     } catch (error) {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = error.message || 'Unable to load section question report';
+        els.sectionReportTimeline.innerHTML = '<div class="empty-card">Unable to load student timeline progress.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">Unable to load section question report.</div>';
     } finally {
         els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
@@ -1297,6 +1312,7 @@ function studentAnalysisTable(items) {
                     <th scope="col">${analysisSortHeader('Student', 'student')}</th>
                     <th scope="col">${analysisSortHeader('Roll', 'roll')}</th>
                     <th scope="col">${analysisSortHeader('Score', 'score')}</th>
+                    <th scope="col">${analysisSortHeader('Band', 'band')}</th>
                     <th scope="col">${analysisSortHeader('Attempted', 'attempted')}</th>
                     <th scope="col">${analysisSortHeader('Review', 'review')}</th>
                     <th scope="col">Strong Topics</th>
@@ -1305,13 +1321,15 @@ function studentAnalysisTable(items) {
             </thead>
             <tbody>
                 ${rows.map(({ submission, summary }) => {
+                    const band = performanceBand(scorePercent(submission));
                     return `
-                        <tr>
+                        <tr class="${esc(band.rowClass)}">
                             <th scope="row">
                                 <button class="table-link" type="button" data-student-report="${submission.id}">${esc(submission.studentName || 'Student')}</button>
                             </th>
                             <td>${esc(submission.admissionNo || '')}</td>
                             <td>${esc(scoreLabel(submission))}</td>
+                            <td><span class="performance-chip ${esc(band.className)}">${esc(band.label)}</span></td>
                             <td>${esc(`${summary.attempted}/${summary.total}`)}</td>
                             <td>${manualCount(submission) ? esc(`${manualCount(submission)} manual`) : '0'}</td>
                             <td class="analysis-text-cell">${esc(summary.strongTopics.join(', ') || '-')}</td>
@@ -1404,16 +1422,110 @@ function questionAnalysisTable(items) {
 function renderSectionQuestionReport() {
     if (!sectionReportSubmissions.length) {
         if (els.sectionReportSectionId.value) {
+            els.sectionReportTimeline.innerHTML = '<div class="empty-card">No student timeline available for enabled quiz sessions in this section.</div>';
             els.sectionReportList.innerHTML = '<div class="empty-card">No submissions found for enabled quiz sessions in this section.</div>';
         }
         return;
     }
     const rows = filteredSectionQuestionRows(sectionQuestionReportRows(sectionReportSubmissions))
         .sort(compareSectionQuestionReportRows);
+    els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
     els.sectionReportList.className = 'submission-table-wrap analysis-table-wrap';
     els.sectionReportList.innerHTML = rows.length
         ? sectionQuestionReportTable(rows)
         : '<div class="empty-card">No questions match these report filters.</div>';
+}
+
+function sectionStudentTimelineHtml(items) {
+    const rows = sectionStudentTimelineRows(items);
+    if (!rows.length) return '<div class="empty-card">No scored student submissions found for this section.</div>';
+    const allAttempts = rows.reduce((sum, row) => sum + row.submissions.length, 0);
+    return `
+        <div class="section-report-block-head">
+            <div>
+                <h3>Student Timeline Progress</h3>
+                <p>${rows.length} student${rows.length === 1 ? '' : 's'} · ${allAttempts} submission${allAttempts === 1 ? '' : 's'} across enabled quiz sessions</p>
+            </div>
+            <div class="timeline-band-legend" aria-label="Performance bands">
+                ${performanceBandChip(75)}
+                ${performanceBandChip(50)}
+                ${performanceBandChip(0)}
+            </div>
+        </div>
+        <div class="section-student-timeline-list">
+            ${rows.map(row => {
+                const averageBand = performanceBand(row.averagePercent);
+                const latestBand = performanceBand(row.latestPercent);
+                return `
+                    <article class="section-student-timeline-card ${esc(averageBand.cardClass)}">
+                        <div class="section-student-timeline-head">
+                            <div>
+                                <strong>${esc(row.studentName)}</strong>
+                                <p>${esc(row.admissionNo || 'No roll')} · ${row.submissions.length} submission${row.submissions.length === 1 ? '' : 's'} · Avg ${row.averagePercent}%</p>
+                            </div>
+                            <div class="timeline-band-stack">
+                                <span class="timeline-band-note">Latest</span>
+                                <span class="performance-chip ${esc(latestBand.className)}">${esc(latestBand.label)}</span>
+                            </div>
+                        </div>
+                        <div class="section-student-timeline-track">
+                            ${row.submissions.map(submission => sectionStudentTimelinePoint(submission)).join('')}
+                        </div>
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function sectionStudentTimelineRows(items) {
+    const students = new Map();
+    items
+        .filter(submission => scoreDetails(submission).maxMarks > 0)
+        .forEach(submission => {
+            const key = studentIdentityKey(submission);
+            if (!students.has(key)) {
+                students.set(key, {
+                    key,
+                    studentName: submission.studentName || 'Student',
+                    admissionNo: submission.admissionNo || '',
+                    submissions: []
+                });
+            }
+            students.get(key).submissions.push(submission);
+        });
+    const rows = Array.from(students.values()).map(row => {
+        row.submissions.sort((a, b) => (a.submittedAtMillis || 0) - (b.submittedAtMillis || 0));
+        const percentages = row.submissions.map(scorePercent);
+        row.averagePercent = percentages.length
+            ? Math.round(percentages.reduce((sum, percent) => sum + percent, 0) / percentages.length)
+            : 0;
+        row.latestPercent = percentages.length ? percentages[percentages.length - 1] : 0;
+        return row;
+    });
+    return rows.sort((a, b) => performanceBand(b.latestPercent).rank - performanceBand(a.latestPercent).rank
+        || b.latestPercent - a.latestPercent
+        || compareText(a.studentName, b.studentName));
+}
+
+function studentIdentityKey(submission) {
+    const studentKey = String(submission.studentKey || '').trim();
+    if (studentKey) return studentKey;
+    const admissionNo = String(submission.admissionNo || '').trim();
+    if (admissionNo) return `${submission.sectionId || ''}:${admissionNo}`;
+    return submission.id || `${submission.studentName || 'Student'}:${submission.submittedAtMillis || ''}`;
+}
+
+function sectionStudentTimelinePoint(submission) {
+    const percent = scorePercent(submission);
+    const band = performanceBand(percent);
+    const title = `${formatDate(submission.submittedAtMillis)} · ${quizSessionLabel(submission)} · ${scoreLabel(submission)}`;
+    return `
+        <span class="section-timeline-point" title="${esc(title)}">
+            <span class="timeline-score-dot ${esc(band.className)}">${percent}%</span>
+            <small>${esc(shortDate(submission.submittedAtMillis))}</small>
+        </span>
+    `;
 }
 
 function renderSectionReportExportFields() {
@@ -2012,7 +2124,7 @@ function analysisSortHeader(label, key) {
 
 function setAnalysisSort(key) {
     const current = analysisSort[submissionViewMode] || { key: '', direction: 'asc' };
-    const defaultDirection = ['avg', 'score', 'students', 'answers', 'seen', 'correct', 'partial', 'wrong', 'pending', 'review', 'attempted'].includes(key) ? 'desc' : 'asc';
+    const defaultDirection = ['avg', 'score', 'band', 'students', 'answers', 'seen', 'correct', 'partial', 'wrong', 'pending', 'review', 'attempted'].includes(key) ? 'desc' : 'asc';
     analysisSort[submissionViewMode] = current.key === key
         ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: defaultDirection };
@@ -2026,6 +2138,7 @@ function compareStudentAnalysisRows(a, b) {
     else if (sort.key === 'roll') result = compareText(a.submission.admissionNo || '', b.submission.admissionNo || '');
     else if (sort.key === 'attempted') result = a.summary.attempted - b.summary.attempted;
     else if (sort.key === 'review') result = manualCount(a.submission) - manualCount(b.submission);
+    else if (sort.key === 'band') result = performanceBand(scorePercent(a.submission)).rank - performanceBand(scorePercent(b.submission)).rank;
     else {
         const aScore = scoreDetails(a.submission);
         const bScore = scoreDetails(b.submission);
@@ -2250,15 +2363,17 @@ function filteredSubmissions() {
 
 function submissionCard(s) {
     const percent = scorePercent(s);
+    const band = performanceBand(percent);
     return `
-        <article class="submission-card">
+        <article class="submission-card ${esc(band.cardClass)}">
             <div class="submission-head">
                 <div>
                     <strong>${esc(s.studentName || 'Student')}</strong>
                     <p>${esc(s.admissionNo || '')} · ${formatDate(s.submittedAtMillis)}</p>
                 </div>
-                <span class="count-chip">${percent}%</span>
+                <span class="performance-chip ${esc(band.className)}">${esc(band.label)}</span>
             </div>
+            <div class="submission-score-line"><strong>${percent}%</strong><span>${esc(scoreLabel(s))}</span></div>
             <div class="score-bar"><div class="score-fill" style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
             <div class="submission-meta">
                 <span>${s.correctCount || 0}/${s.gradableCount || 0} auto-graded</span>
@@ -2375,12 +2490,14 @@ function renderStudentReport() {
         return !activeStudentReport.subject || subject === activeStudentReport.subject;
     });
     const metrics = studentReportMetrics(items);
+    const averageBand = performanceBand(metrics.average);
+    const latestBand = performanceBand(metrics.latest);
     els.studentReportTitle.textContent = seed.studentName || 'Student Report';
     els.studentReportMeta.textContent = `${seed.admissionNo || ''} · ${items.length} of ${history.length} submission${history.length === 1 ? '' : 's'} shown`;
     els.studentReportSummary.innerHTML = `
-        <div class="stat-card"><span>Average</span><strong>${metrics.average}%</strong></div>
+        <div class="stat-card ${esc(averageBand.cardClass)}"><span>Average</span><strong>${metrics.average}%</strong><em>${esc(averageBand.label)}</em></div>
         <div class="stat-card"><span>Best</span><strong>${metrics.best}%</strong></div>
-        <div class="stat-card"><span>Latest</span><strong>${metrics.latest}%</strong></div>
+        <div class="stat-card ${esc(latestBand.cardClass)}"><span>Latest</span><strong>${metrics.latest}%</strong><em>${esc(latestBand.label)}</em></div>
         <div class="stat-card"><span>Pending Review</span><strong>${metrics.pending}</strong></div>
     `;
     els.studentReportInsights.innerHTML = studentReportInsightsHtml(items);
@@ -2480,6 +2597,7 @@ function studentReportRecentTableHtml(items) {
         { key: 'session', label: 'Quiz Session', value: row => quizSessionLabel(row) },
         { key: 'subject', label: 'Subject', value: row => row.subject || 'Any subject' },
         { key: 'score', label: 'Score', value: row => scoreLabel(row), sortValue: row => scorePercent(row) },
+        { key: 'band', label: 'Band', value: row => performanceBand(row).label, html: row => performanceBandChip(row), sortValue: row => performanceBand(row).rank },
         { key: 'review', label: 'Review', value: row => manualCount(row), sortValue: row => manualCount(row) }
     ], items, { limit: 12 });
 }
@@ -2498,7 +2616,8 @@ function studentReportSimpleTable(title, tableKey, columns, rows, options = {}) 
                     ${sortedRows.map(row => `
                         <tr>${columns.map((column, index) => {
                             const tag = index === 0 ? 'th scope="row"' : 'td';
-                            return `<${tag}>${esc(column.value(row))}</${index === 0 ? 'th' : 'td'}>`;
+                            const content = column.html ? column.html(row) : esc(column.value(row));
+                            return `<${tag}>${content}</${index === 0 ? 'th' : 'td'}>`;
                         }).join('')}</tr>
                     `).join('')}
                 </tbody>
@@ -2535,7 +2654,7 @@ function handleStudentReportSortClick(event) {
     const key = button.dataset.studentReportSort;
     if (!tableKey || !key) return;
     const current = studentReportSort[tableKey] || { key: '', direction: 'asc' };
-    const defaultDirection = ['sessions', 'attempted', 'avg', 'best', 'correct', 'pending', 'date', 'score', 'review'].includes(key) ? 'desc' : 'asc';
+    const defaultDirection = ['sessions', 'attempted', 'avg', 'best', 'correct', 'pending', 'date', 'score', 'band', 'review'].includes(key) ? 'desc' : 'asc';
     studentReportSort[tableKey] = current.key === key
         ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: defaultDirection };
@@ -3156,6 +3275,43 @@ async function renderRich(root) {
 
 function scorePercent(submission) {
     return scoreDetails(submission).percent;
+}
+
+function performanceBand(value) {
+    const percent = typeof value === 'number' ? value : scorePercent(value);
+    if (percent >= 75) {
+        return {
+            key: 'strong',
+            label: 'Strong',
+            className: 'performance-strong',
+            rowClass: 'performance-row-strong',
+            cardClass: 'performance-card-strong',
+            rank: 2
+        };
+    }
+    if (percent >= 50) {
+        return {
+            key: 'middle',
+            label: 'Middle / Inconsistent',
+            className: 'performance-middle',
+            rowClass: 'performance-row-middle',
+            cardClass: 'performance-card-middle',
+            rank: 1
+        };
+    }
+    return {
+        key: 'support',
+        label: 'Needs Intensive Support',
+        className: 'performance-support',
+        rowClass: 'performance-row-support',
+        cardClass: 'performance-card-support',
+        rank: 0
+    };
+}
+
+function performanceBandChip(value) {
+    const band = performanceBand(value);
+    return `<span class="performance-chip ${esc(band.className)}">${esc(band.label)}</span>`;
 }
 
 function scoreLabel(submission) {

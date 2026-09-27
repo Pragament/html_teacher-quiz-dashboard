@@ -532,6 +532,30 @@ button {
     font-size: 22px;
 }
 
+.stat-card em {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.performance-card-strong {
+    border-color: #86d49c;
+    background: #edf9f0;
+}
+
+.performance-card-middle {
+    border-color: #f4d177;
+    background: #fff8e3;
+}
+
+.performance-card-support {
+    border-color: #f4a39a;
+    background: #fff0ee;
+}
+
 .filters-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -675,6 +699,21 @@ button {
     color: #fff;
 }
 
+.submission-table tbody tr.performance-row-strong th,
+.submission-table tbody tr.performance-row-strong td {
+    background: #edf9f0;
+}
+
+.submission-table tbody tr.performance-row-middle th,
+.submission-table tbody tr.performance-row-middle td {
+    background: #fff8e3;
+}
+
+.submission-table tbody tr.performance-row-support th,
+.submission-table tbody tr.performance-row-support td {
+    background: #fff0ee;
+}
+
 .analysis-table {
     min-width: 980px;
 }
@@ -753,6 +792,119 @@ button {
     margin: 0;
     color: var(--text);
     font-size: 15px;
+}
+
+.section-student-timeline {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.section-report-block-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.section-report-block-head h3,
+.section-report-block-head p {
+    margin: 0;
+}
+
+.section-report-block-head h3 {
+    color: var(--text);
+    font-size: 15px;
+}
+
+.section-report-block-head p {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.timeline-band-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.section-student-timeline-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.section-student-timeline-card {
+    display: grid;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.section-student-timeline-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.section-student-timeline-head strong,
+.section-student-timeline-head p {
+    margin: 0;
+}
+
+.section-student-timeline-head strong {
+    color: var(--text);
+    font-size: 14px;
+}
+
+.section-student-timeline-head p,
+.timeline-band-note {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.timeline-band-stack {
+    display: grid;
+    justify-items: end;
+    gap: 4px;
+}
+
+.section-student-timeline-track {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.section-timeline-point {
+    min-width: 54px;
+    display: grid;
+    gap: 4px;
+    justify-items: center;
+}
+
+.timeline-score-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.section-timeline-point small {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 .student-report-insights {
@@ -1037,6 +1189,51 @@ button {
 .submission-card {
     display: grid;
     gap: 9px;
+}
+
+.submission-score-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.submission-score-line strong {
+    font-size: 18px;
+}
+
+.submission-score-line span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.performance-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    border-radius: 999px;
+    padding: 0 9px;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.performance-strong {
+    color: #0f6b2c;
+    background: #ccefd6;
+}
+
+.performance-middle {
+    color: #775300;
+    background: #ffe39a;
+}
+
+.performance-support {
+    color: #9d1f16;
+    background: #ffd2cc;
 }
 
 .submission-meta,
@@ -1367,7 +1564,8 @@ button {
     }
 
     .classroom-list,
-    .section-list {
+    .section-list,
+    .section-student-timeline-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -1387,6 +1585,7 @@ button {
     .topbar,
     .topbar-actions,
     .panel-head,
+    .section-report-block-head,
     .section-report-export,
     .modal-head,
     .submission-head,
@@ -1418,6 +1617,7 @@ button {
     .classroom-edit-grid,
     .ai-response-row,
     .student-report-grid,
+    .section-student-timeline-list,
     .compact-export-list,
     .question-type-grid,
     .student-difficulty-tools,
