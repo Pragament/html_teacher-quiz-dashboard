@@ -562,6 +562,37 @@ button {
     margin-top: 14px;
 }
 
+.section-report-secondary-filters {
+    align-items: end;
+}
+
+.section-report-band-field {
+    grid-column: span 2;
+}
+
+.band-filter-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.band-filter-list label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    color: #41546b;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.band-filter-list input {
+    margin: 0 6px 0 0;
+}
+
 .segmented-control {
     display: inline-flex;
     flex-wrap: wrap;
@@ -1618,6 +1649,7 @@ button {
     .ai-response-row,
     .student-report-grid,
     .section-student-timeline-list,
+    .section-report-band-field,
     .compact-export-list,
     .question-type-grid,
     .student-difficulty-tools,
