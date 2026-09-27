@@ -532,6 +532,30 @@ button {
     font-size: 22px;
 }
 
+.stat-card em {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.performance-card-strong {
+    border-color: #86d49c;
+    background: #edf9f0;
+}
+
+.performance-card-middle {
+    border-color: #f4d177;
+    background: #fff8e3;
+}
+
+.performance-card-support {
+    border-color: #f4a39a;
+    background: #fff0ee;
+}
+
 .filters-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -673,6 +697,21 @@ button {
 .submission-table .answer-cell.missing {
     background: #cfcfcf;
     color: #fff;
+}
+
+.submission-table tbody tr.performance-row-strong th,
+.submission-table tbody tr.performance-row-strong td {
+    background: #edf9f0;
+}
+
+.submission-table tbody tr.performance-row-middle th,
+.submission-table tbody tr.performance-row-middle td {
+    background: #fff8e3;
+}
+
+.submission-table tbody tr.performance-row-support th,
+.submission-table tbody tr.performance-row-support td {
+    background: #fff0ee;
 }
 
 .analysis-table {
@@ -1037,6 +1076,51 @@ button {
 .submission-card {
     display: grid;
     gap: 9px;
+}
+
+.submission-score-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.submission-score-line strong {
+    font-size: 18px;
+}
+
+.submission-score-line span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.performance-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    border-radius: 999px;
+    padding: 0 9px;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.performance-strong {
+    color: #0f6b2c;
+    background: #ccefd6;
+}
+
+.performance-middle {
+    color: #775300;
+    background: #ffe39a;
+}
+
+.performance-support {
+    color: #9d1f16;
+    background: #ffd2cc;
 }
 
 .submission-meta,
