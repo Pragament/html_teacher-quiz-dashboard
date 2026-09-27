@@ -957,6 +957,63 @@ button {
     white-space: nowrap;
 }
 
+.section-report-prompts {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.section-prompt-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.section-prompt-card {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+}
+
+.section-prompt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.section-prompt-head strong,
+.section-prompt-card p {
+    margin: 0;
+}
+
+.section-prompt-head strong {
+    color: var(--text);
+    font-size: 14px;
+}
+
+.section-prompt-card p {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.section-prompt-card textarea {
+    width: 100%;
+    min-height: 168px;
+    resize: vertical;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-soft);
+    color: var(--text);
+    padding: 9px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .student-report-insights {
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1668,6 +1725,7 @@ button {
     .ai-response-row,
     .student-report-grid,
     .section-student-timeline-list,
+    .section-prompt-grid,
     .section-report-band-field,
     .compact-export-list,
     .question-type-grid,
