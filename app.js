@@ -80,6 +80,11 @@ const SECTION_REPORT_EXPORT_COLUMNS = [
     { id: 'wrongOption', label: 'Most Wrong Option', header: 'Most Wrong Option', selected: true, value: row => row.mostWrongOption || '-' },
     { id: 'pending', label: 'Needs Review', header: 'Needs Review', selected: false, value: row => row.pending }
 ];
+const SECTION_REPORT_BANDS = [
+    { key: 'strong', samplePercent: 75 },
+    { key: 'middle', samplePercent: 50 },
+    { key: 'support', samplePercent: 0 }
+];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -301,6 +306,7 @@ function bindEvents() {
     els.sectionReportStartDate.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportEndDate.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportBandFilters.addEventListener('change', renderSectionQuestionReport);
+    els.sectionReportTimeline.addEventListener('click', handleSectionReportBandLegendClick);
     els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
     els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
     els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
@@ -1462,13 +1468,16 @@ function filteredSectionReportSubmissions() {
     const endMillis = dateInputEndMillis(els.sectionReportEndDate.value);
     const selectedBands = selectedSectionReportBands();
     if (!selectedBands.size) return [];
-    return sectionReportSubmissions.filter(submission => {
+    const dateFiltered = sectionReportSubmissions.filter(submission => {
         const submittedMillis = submissionSubmittedMillis(submission);
         if (startMillis !== null && (!submittedMillis || submittedMillis < startMillis)) return false;
         if (endMillis !== null && (!submittedMillis || submittedMillis > endMillis)) return false;
-        if (!selectedBands.has(performanceBand(submission).key)) return false;
         return true;
     });
+    const visibleStudents = new Set(sectionStudentTimelineRows(dateFiltered)
+        .filter(row => selectedBands.has(performanceBand(row.averagePercent).key))
+        .map(row => row.key));
+    return dateFiltered.filter(submission => visibleStudents.has(studentIdentityKey(submission)));
 }
 
 function selectedSectionReportBands() {
@@ -1509,9 +1518,7 @@ function sectionStudentTimelineHtml(items) {
                 <p>${rows.length} student${rows.length === 1 ? '' : 's'} · ${allAttempts} submission${allAttempts === 1 ? '' : 's'} across enabled quiz sessions</p>
             </div>
             <div class="timeline-band-legend" aria-label="Performance bands">
-                ${performanceBandChip(75)}
-                ${performanceBandChip(50)}
-                ${performanceBandChip(0)}
+                ${sectionReportBandLegendHtml()}
             </div>
         </div>
         <div class="section-student-timeline-list">
@@ -1538,6 +1545,26 @@ function sectionStudentTimelineHtml(items) {
             }).join('')}
         </div>
     `;
+}
+
+function sectionReportBandLegendHtml() {
+    const selectedBands = selectedSectionReportBands();
+    return SECTION_REPORT_BANDS.map(({ key, samplePercent }) => {
+        const band = performanceBand(samplePercent);
+        const active = selectedBands.has(key);
+        return `<button class="performance-chip timeline-band-toggle ${esc(band.className)} ${active ? 'active' : 'muted'}" type="button" data-section-report-band-toggle="${esc(key)}" aria-pressed="${active ? 'true' : 'false'}">${esc(band.label)}</button>`;
+    }).join('');
+}
+
+function handleSectionReportBandLegendClick(event) {
+    const button = event.target.closest('[data-section-report-band-toggle]');
+    if (!button) return;
+    const band = button.dataset.sectionReportBandToggle;
+    const checkbox = Array.from(els.sectionReportBandFilters.querySelectorAll('input[type="checkbox"]'))
+        .find(input => input.value === band);
+    if (!checkbox) return;
+    checkbox.checked = !checkbox.checked;
+    renderSectionQuestionReport();
 }
 
 function sectionStudentTimelineRows(items) {
