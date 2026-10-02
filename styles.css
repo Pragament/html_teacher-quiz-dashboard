@@ -1024,6 +1024,54 @@ button {
     line-height: 1.45;
 }
 
+.section-short-answer-report {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.short-answer-report-list {
+    display: grid;
+    gap: 12px;
+}
+
+.short-answer-question-card {
+    display: grid;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+}
+
+.short-answer-question-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.short-answer-question-head strong,
+.short-answer-question-head p {
+    margin: 0;
+}
+
+.short-answer-question-head strong {
+    color: var(--text);
+    font-size: 14px;
+}
+
+.short-answer-question-head p,
+.short-answer-report-table span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.short-answer-report-table {
+    min-width: 860px;
+}
+
 .student-report-insights {
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1704,6 +1752,7 @@ button {
     .panel-head,
     .section-report-block-head,
     .section-report-export,
+    .short-answer-question-head,
     .modal-head,
     .submission-head,
     .answer-head,
