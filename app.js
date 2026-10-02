@@ -169,6 +169,7 @@ const els = {
     sectionReportSummary: $('sectionReportSummary'),
     sectionReportTimeline: $('sectionReportTimeline'),
     sectionReportPrompts: $('sectionReportPrompts'),
+    sectionShortAnswerReport: $('sectionShortAnswerReport'),
     sectionReportList: $('sectionReportList'),
     submissionSummary: $('submissionSummary'),
     sessionReportPrompts: $('sessionReportPrompts'),
@@ -311,7 +312,8 @@ function bindEvents() {
     els.sectionReportTimeline.addEventListener('click', handleSectionReportTimelineClick);
     els.sectionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
     els.sessionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
-    els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
+    els.sectionShortAnswerReport.addEventListener('click', handleSectionReportListClick);
+    els.sectionReportList.addEventListener('click', handleSectionReportListClick);
     els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
     els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
     $('closeDetailBtn').addEventListener('click', () => els.detailDialog.close());
@@ -1164,6 +1166,7 @@ function renderSectionReportOptions() {
         els.sectionReportSummary.textContent = 'No sections found where you have viewer or admin access.';
         els.sectionReportTimeline.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
         els.sectionReportPrompts.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
+        els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
     }
 }
@@ -1180,6 +1183,7 @@ async function loadSectionQuestionReport() {
     els.sectionReportSummary.textContent = `Loading enabled quiz sessions for ${sectionLabel(section)}...`;
     els.sectionReportTimeline.innerHTML = '<div class="empty-card">Loading student timeline progress...</div>';
     els.sectionReportPrompts.innerHTML = '<div class="empty-card">Loading remedial teaching prompts...</div>';
+    els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">Loading short-answer report...</div>';
     els.sectionReportList.innerHTML = '<div class="empty-card">Loading section question report...</div>';
     try {
         const classroomSnap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('sectionId', '==', sectionId)));
@@ -1195,6 +1199,7 @@ async function loadSectionQuestionReport() {
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processing ${index + 1}/${enabledClassrooms.length} quiz sessions (${percent}%) · ${classroom.className || classroom.classCode || classroom.id}`;
             els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${percent}%</div>`;
             els.sectionReportPrompts.innerHTML = `<div class="empty-card">Loading remedial teaching prompts... ${percent}%</div>`;
+            els.sectionShortAnswerReport.innerHTML = `<div class="empty-card">Loading short-answer report... ${percent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${percent}%</div>`;
             const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
             if (classroom.classCode && classroom.classCode !== classroom.id) {
@@ -1216,12 +1221,14 @@ async function loadSectionQuestionReport() {
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processed ${index + 1}/${enabledClassrooms.length} quiz sessions (${donePercent}%)`;
             els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${donePercent}%</div>`;
             els.sectionReportPrompts.innerHTML = `<div class="empty-card">Loading remedial teaching prompts... ${donePercent}%</div>`;
+            els.sectionShortAnswerReport.innerHTML = `<div class="empty-card">Loading short-answer report... ${donePercent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${donePercent}%</div>`;
         }
         sectionReportSubmissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
         els.sectionReportSummary.textContent = `${sectionLabel(section)} · Quiz sessions loaded. Loading question metadata...`;
         els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(sectionReportSubmissions);
         els.sectionReportPrompts.innerHTML = '<div class="empty-card">Preparing remedial teaching prompts...</div>';
+        els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">Preparing short-answer report...</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">Loading question metadata...</div>';
         await loadQuestionMetadataForSubmissions(sectionReportSubmissions, ({ loaded, total, phase }) => {
             const percent = total ? Math.round((loaded / total) * 100) : 100;
@@ -1236,6 +1243,7 @@ async function loadSectionQuestionReport() {
         els.sectionReportSummary.textContent = error.message || 'Unable to load section question report';
         els.sectionReportTimeline.innerHTML = '<div class="empty-card">Unable to load student timeline progress.</div>';
         els.sectionReportPrompts.innerHTML = '<div class="empty-card">Unable to generate remedial teaching prompts.</div>';
+        els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">Unable to load short-answer report.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">Unable to load section question report.</div>';
     } finally {
         els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
@@ -1474,6 +1482,7 @@ function renderSectionQuestionReport() {
         if (els.sectionReportSectionId.value) {
             els.sectionReportTimeline.innerHTML = '<div class="empty-card">No student timeline available for enabled quiz sessions in this section.</div>';
             els.sectionReportPrompts.innerHTML = '<div class="empty-card">No remedial teaching prompts available until submissions are loaded.</div>';
+            els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">No short-answer responses available until submissions are loaded.</div>';
             els.sectionReportList.innerHTML = '<div class="empty-card">No submissions found for enabled quiz sessions in this section.</div>';
         }
         return;
@@ -1482,6 +1491,7 @@ function renderSectionQuestionReport() {
     if (!filteredSubmissions.length) {
         els.sectionReportTimeline.innerHTML = '<div class="empty-card">No submissions match the selected date range and performance bands.</div>';
         els.sectionReportPrompts.innerHTML = '<div class="empty-card">No prompts available because no submissions match these filters.</div>';
+        els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">No short-answer responses match these filters.</div>';
         els.sectionReportList.innerHTML = '<div class="empty-card">No submissions match these section report filters.</div>';
         return;
     }
@@ -1489,6 +1499,7 @@ function renderSectionQuestionReport() {
         .sort(compareSectionQuestionReportRows);
     els.sectionReportTimeline.innerHTML = sectionStudentTimelineHtml(filteredSubmissions);
     els.sectionReportPrompts.innerHTML = sectionReportPromptListHtml(filteredSubmissions, rows);
+    els.sectionShortAnswerReport.innerHTML = sectionShortAnswerReportHtml(filteredSubmissions);
     els.sectionReportList.className = 'submission-table-wrap analysis-table-wrap';
     els.sectionReportList.innerHTML = rows.length
         ? sectionQuestionReportTable(rows)
@@ -1621,6 +1632,93 @@ function openSectionTimelineSubmissionDetail(id) {
     const submission = sectionReportSubmissions.find(item => item.id === id);
     if (!submission) return;
     openSubmissionDetailFromRecord(submission);
+}
+
+function sectionShortAnswerReportHtml(items) {
+    const groups = sectionShortAnswerGroups(items);
+    if (!groups.length) return '<div class="empty-card">No non-empty short-answer responses found in the current section report filters.</div>';
+    return `
+        <div class="section-report-block-head">
+            <div>
+                <h3>Short Answer Report</h3>
+                <p>${groups.length} question${groups.length === 1 ? '' : 's'} with non-empty short-answer responses across selected submissions.</p>
+            </div>
+        </div>
+        <div class="short-answer-report-list">
+            ${groups.map(group => `
+                <article class="short-answer-question-card">
+                    <div class="short-answer-question-head">
+                        <div>
+                            <strong>${esc(group.title)}</strong>
+                            <p>${esc(group.topic)} · ${esc(group.dateLabel)} · ${group.responses.length} response${group.responses.length === 1 ? '' : 's'}</p>
+                        </div>
+                        <button class="btn small" type="button" data-section-question-key="${esc(group.key)}">Review</button>
+                    </div>
+                    <div class="student-report-table-wrap">
+                        <table class="student-report-table short-answer-report-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Student</th>
+                                    <th scope="col">Date</th>
+                                    <th scope="col">Student Answer</th>
+                                    <th scope="col">AI Reason</th>
+                                    <th scope="col">AI Marks</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${group.responses.map(({ submission, answer, index }) => {
+                                    const review = getAiReview(submission, answer, index);
+                                    return `
+                                        <tr>
+                                            <th scope="row">${esc(submission.studentName || 'Student')}<br><span>${esc(submission.admissionNo || '')}</span></th>
+                                            <td>${esc(shortDate(submissionSubmittedMillis(submission)))}</td>
+                                            <td class="analysis-text-cell">${esc(answerResponseText(answer))}</td>
+                                            <td class="analysis-text-cell">${esc(review?.reason || 'Not reviewed')}</td>
+                                            <td>${hasSavedAiReview(review) ? esc(`${formatMarks(review.marks)}/4`) : '-'}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            `).join('')}
+        </div>
+    `;
+}
+
+function sectionShortAnswerGroups(items) {
+    const groups = new Map();
+    items.forEach(submission => {
+        (submission.answers || []).forEach((answer, index) => {
+            if (normalizedQuestionType(answer) !== 'short_answer') return;
+            if (!answerResponseText(answer).trim()) return;
+            const key = questionKeyForAnswer(answer, index);
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key,
+                    title: questionTitleForAnswer(answer) || answer.questionId || `Question ${groups.size + 1}`,
+                    topic: topicLabelForAnswer(answer, submission),
+                    responses: []
+                });
+            }
+            const group = groups.get(key);
+            group.responses.push({ submission, answer, index });
+            if (!group.topic || group.topic === 'Unmapped') group.topic = topicLabelForAnswer(answer, submission);
+        });
+    });
+    return Array.from(groups.values()).map(group => {
+        group.responses.sort((a, b) => (submissionSubmittedMillis(b.submission) || 0) - (submissionSubmittedMillis(a.submission) || 0)
+            || compareText(a.submission.studentName, b.submission.studentName));
+        const dates = group.responses
+            .map(item => submissionSubmittedMillis(item.submission))
+            .filter(Boolean)
+            .sort((a, b) => a - b);
+        group.dateLabel = dates.length
+            ? `${shortDate(dates[0])}${dates.length > 1 ? ` - ${shortDate(dates[dates.length - 1])}` : ''}`
+            : 'No date';
+        return group;
+    }).sort((a, b) => b.responses.length - a.responses.length || compareText(a.title, b.title));
 }
 
 function sectionReportPromptListHtml(items, rows, options = {}) {
@@ -2114,7 +2212,9 @@ function sectionQuestionReportTable(rows) {
             <tbody>
                 ${rows.map(row => `
                     <tr>
-                        <th scope="row" class="analysis-text-cell">${esc(row.title)}</th>
+                        <th scope="row" class="analysis-text-cell">
+                            <button class="table-link question-analysis-link" type="button" data-section-question-key="${esc(row.key)}" title="${esc(row.title)}">${esc(row.title)}</button>
+                        </th>
                         <td>${esc(questionTypeLabel(row.type || 'unknown'))}</td>
                         <td class="analysis-text-cell">${esc(row.topic)}</td>
                         <td>${row.seenBy}</td>
@@ -2146,6 +2246,53 @@ function handleSectionReportSortClick(event) {
         ? { key, direction: sectionReportSort.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: defaultDirection };
     renderSectionQuestionReport();
+}
+
+function handleSectionReportListClick(event) {
+    const questionButton = event.target.closest('[data-section-question-key]');
+    if (questionButton) {
+        openSectionReportQuestionDetail(questionButton.dataset.sectionQuestionKey);
+        return;
+    }
+    handleSectionReportSortClick(event);
+}
+
+function openSectionReportQuestionDetail(questionKey) {
+    const visible = filteredSectionReportSubmissions();
+    const column = buildQuestionColumnsForSectionReport(visible).find(item => item.key === questionKey);
+    if (!column) return;
+    const responses = visible.map(submission => {
+        const { answer, index } = answerForSectionReportQuestion(submission, questionKey);
+        return { submission, answer, index };
+    }).filter(({ answer }) => answer && answerResponseText(answer).trim());
+    const answer = responses.map(item => item.answer).find(Boolean);
+    if (!answer) return;
+    const correct = responses.filter(item => item.answer.isCorrect === true).length;
+    const wrong = responses.filter(item => item.answer.isCorrect === false).length;
+    const manual = responses.filter(item => item.answer && item.answer.isCorrect !== true && item.answer.isCorrect !== false).length;
+
+    els.questionDetailTitle.textContent = 'Section Question Review';
+    els.questionDetailMeta.textContent = `${responses.length} non-empty response${responses.length === 1 ? '' : 's'} · ${correct} correct · ${wrong} wrong · ${manual} manual`;
+    els.questionPrompt.innerHTML = `
+        <div class="rich-content">${sanitizeRich(answer.promptHtml || questionMetadataForAnswer(answer)?.promptHtml || '')}</div>
+        <div><strong>Correct answer:</strong> ${esc(answer.correctAnswer || answer.expectedAnswer || 'Teacher review')}</div>
+        <div class="answer-footer">
+            <span>${esc(questionTypeLabel(normalizedQuestionType(answer)))}</span>
+            ${answer.questionId ? `<span>${esc(answer.questionId)}</span>` : ''}
+            <span>${esc(topicLabelForAnswer(answer, responses[0]?.submission || {}))}</span>
+        </div>
+    `;
+    activeQuestionReview = {
+        index: responses[0]?.index ?? 0,
+        label: 'Section Question',
+        answer,
+        responses
+    };
+    initializeAiReviewSelection();
+    updateAiReviewControls();
+    renderQuestionResponses();
+    renderRich(els.questionPrompt);
+    els.questionDialog.showModal();
 }
 
 function compareSectionQuestionReportRows(a, b) {
