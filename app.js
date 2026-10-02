@@ -221,6 +221,8 @@ const els = {
     cardViewBtn: $('cardViewBtn'),
     exportAnswerTableCsvBtn: $('exportAnswerTableCsvBtn'),
     copyAnswerTablePromptBtn: $('copyAnswerTablePromptBtn'),
+    answerTableWrongManualField: $('answerTableWrongManualField'),
+    answerTableWrongManualOnly: $('answerTableWrongManualOnly'),
     classroomDialog: $('classroomDialog'),
     editClassroomTitle: $('editClassroomTitle'),
     editClassroomForm: $('editClassroomForm'),
@@ -351,6 +353,7 @@ function bindEvents() {
     $('exportCsvBtn').addEventListener('click', openExportDialog);
     els.exportAnswerTableCsvBtn.addEventListener('click', exportAnswerTableCsv);
     els.copyAnswerTablePromptBtn.addEventListener('click', copyAnswerTablePrompt);
+    els.answerTableWrongManualOnly.addEventListener('change', renderSubmissions);
     els.studentAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('students'));
     els.topicAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('topics'));
     els.questionAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('questions'));
@@ -1279,6 +1282,7 @@ function renderSubmissions() {
     els.cardViewBtn.classList.toggle('active', submissionViewMode === 'cards');
     els.exportAnswerTableCsvBtn.hidden = submissionViewMode !== 'answerTable';
     els.copyAnswerTablePromptBtn.hidden = submissionViewMode !== 'answerTable';
+    els.answerTableWrongManualField.hidden = submissionViewMode !== 'answerTable';
     els.submissionList.className = submissionViewMode === 'cards' ? 'submission-list' : 'submission-table-wrap analysis-table-wrap';
     els.submissionList.innerHTML = sorted.length
         ? renderSubmissionView(sorted)
@@ -2773,6 +2777,7 @@ function answerTableRows(items = filteredSubmissions()) {
     items.forEach(submission => {
         answersMatchingQuestionType(submission).forEach(({ answer, index }) => {
             const marks = answerMarks(submission, answer, index);
+            if (els.answerTableWrongManualOnly.checked && !isWrongOrManualAnswerRow(answer, marks)) return;
             rows.push({
                 submissionId: submission.id,
                 studentName: submission.studentName || 'Student',
@@ -2790,6 +2795,11 @@ function answerTableRows(items = filteredSubmissions()) {
         });
     });
     return rows;
+}
+
+function isWrongOrManualAnswerRow(answer, marks) {
+    if (marks === null) return true;
+    return marks <= 0 && !!answerResponseText(answer);
 }
 
 function sortedAnswerTableRows(rows) {
@@ -3535,6 +3545,7 @@ function buildAnswerTablePrompt(rows) {
     const context = [
         `Quiz session: ${quizSessionLabelForClassroom(classroom)}`,
         `Visible answer rows: ${rows.length}`,
+        `Answer row scope: ${els.answerTableWrongManualOnly.checked ? 'Only wrong and manual review rows' : 'All visible answer rows'}`,
         `Question type filter: ${$('questionTypeFilter')?.value ? questionTypeLabel($('questionTypeFilter').value) : 'Any'}`,
         `Student filter: ${$('studentSearch')?.value || 'Any'}`,
         `Subject filter: ${$('subjectFilter')?.value || 'Any'}`,
