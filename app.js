@@ -106,6 +106,7 @@ let submissionViewMode = 'students';
 let submissionSort = { key: 'score', direction: 'desc' };
 let sectionReportSubmissions = [];
 let sectionReportSort = { key: 'seen', direction: 'desc' };
+let sectionShortAnswerReviewedOnly = false;
 let analysisSort = {
     students: { key: 'score', direction: 'desc' },
     topics: { key: 'avg', direction: 'asc' },
@@ -312,7 +313,8 @@ function bindEvents() {
     els.sectionReportTimeline.addEventListener('click', handleSectionReportTimelineClick);
     els.sectionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
     els.sessionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
-    els.sectionShortAnswerReport.addEventListener('click', handleSectionReportListClick);
+    els.sectionShortAnswerReport.addEventListener('click', handleSectionShortAnswerReportClick);
+    els.sectionShortAnswerReport.addEventListener('change', handleSectionShortAnswerReportChange);
     els.sectionReportList.addEventListener('click', handleSectionReportListClick);
     els.exportSectionReportCsvBtn.addEventListener('click', exportSectionReportCsv);
     els.exportSectionReportPdfBtn.addEventListener('click', exportSectionReportPdf);
@@ -1637,11 +1639,20 @@ function openSectionTimelineSubmissionDetail(id) {
 function sectionShortAnswerReportHtml(items) {
     const groups = sectionShortAnswerGroups(items);
     if (!groups.length) return '<div class="empty-card">No non-empty short-answer responses found in the current section report filters.</div>';
+    const responseCount = groups.reduce((sum, group) => sum + group.responses.length, 0);
     return `
         <div class="section-report-block-head">
             <div>
                 <h3>Short Answer Report</h3>
-                <p>${groups.length} question${groups.length === 1 ? '' : 's'} with non-empty short-answer responses across selected submissions.</p>
+                <p>${groups.length} question${groups.length === 1 ? '' : 's'} · ${responseCount} response${responseCount === 1 ? '' : 's'}${sectionShortAnswerReviewedOnly ? ' · AI reviewed only' : ''}</p>
+            </div>
+            <div class="short-answer-actions">
+                <label class="check-field inline-check">
+                    <input type="checkbox" data-short-answer-reviewed-only ${sectionShortAnswerReviewedOnly ? 'checked' : ''} />
+                    <span>AI reviewed only</span>
+                </label>
+                <button class="btn small" type="button" data-export-short-answer="csv">Export CSV</button>
+                <button class="btn small" type="button" data-export-short-answer="pdf">Export PDF</button>
             </div>
         </div>
         <div class="short-answer-report-list">
@@ -1693,6 +1704,7 @@ function sectionShortAnswerGroups(items) {
         (submission.answers || []).forEach((answer, index) => {
             if (normalizedQuestionType(answer) !== 'short_answer') return;
             if (!answerResponseText(answer).trim()) return;
+            if (sectionShortAnswerReviewedOnly && !hasSavedAiReview(getAiReview(submission, answer, index))) return;
             const key = questionKeyForAnswer(answer, index);
             if (!groups.has(key)) {
                 groups.set(key, {
@@ -1719,6 +1731,137 @@ function sectionShortAnswerGroups(items) {
             : 'No date';
         return group;
     }).sort((a, b) => b.responses.length - a.responses.length || compareText(a.title, b.title));
+}
+
+function handleSectionShortAnswerReportChange(event) {
+    if (!event.target.matches('[data-short-answer-reviewed-only]')) return;
+    sectionShortAnswerReviewedOnly = event.target.checked;
+    renderSectionShortAnswerReportOnly();
+}
+
+function handleSectionShortAnswerReportClick(event) {
+    const exportButton = event.target.closest('[data-export-short-answer]');
+    if (exportButton) {
+        exportSectionShortAnswerReport(exportButton.dataset.exportShortAnswer);
+        return;
+    }
+    handleSectionReportListClick(event);
+}
+
+function renderSectionShortAnswerReportOnly() {
+    const filteredSubmissions = filteredSectionReportSubmissions();
+    els.sectionShortAnswerReport.innerHTML = filteredSubmissions.length
+        ? sectionShortAnswerReportHtml(filteredSubmissions)
+        : '<div class="empty-card">No short-answer responses match these filters.</div>';
+}
+
+function sectionShortAnswerExportRows() {
+    return sectionShortAnswerGroups(filteredSectionReportSubmissions())
+        .flatMap(group => group.responses.map(({ submission, answer, index }) => {
+            const review = getAiReview(submission, answer, index);
+            return {
+                question: group.title,
+                topic: group.topic,
+                date: formatDate(submissionSubmittedMillis(submission)),
+                student: submission.studentName || 'Student',
+                roll: submission.admissionNo || '',
+                answer: answerResponseText(answer),
+                aiReason: review?.reason || 'Not reviewed',
+                aiMarks: hasSavedAiReview(review) ? `${formatMarks(review.marks)}/4` : ''
+            };
+        }));
+}
+
+function exportSectionShortAnswerReport(format) {
+    const rows = sectionShortAnswerExportRows();
+    if (!rows.length) {
+        toast('No short-answer report rows to export');
+        return;
+    }
+    if (format === 'csv') {
+        const csvRows = [
+            ['Question', 'Topic', 'Date', 'Student', 'Roll', 'Student Answer', 'AI Reason', 'AI Marks'],
+            ...rows.map(row => [row.question, row.topic, row.date, row.student, row.roll, row.answer, row.aiReason, row.aiMarks])
+        ];
+        downloadBlob(new Blob([toCsv(csvRows)], { type: 'text/csv;charset=utf-8' }), `${sectionShortAnswerFileBaseName()}.csv`);
+        return;
+    }
+    exportSectionShortAnswerReportPdf(rows);
+}
+
+function exportSectionShortAnswerReportPdf(rows) {
+    const jspdf = window.jspdf?.jsPDF;
+    if (!jspdf) {
+        toast('PDF library is still loading');
+        return;
+    }
+    const docPdf = new jspdf({ unit: 'pt', format: 'a4', orientation: 'landscape' });
+    const pageWidth = docPdf.internal.pageSize.getWidth();
+    const pageHeight = docPdf.internal.pageSize.getHeight();
+    const margin = 30;
+    const columns = [
+        { header: 'Question', value: row => row.question, width: 150 },
+        { header: 'Topic', value: row => row.topic, width: 120 },
+        { header: 'Date', value: row => row.date, width: 72 },
+        { header: 'Student', value: row => `${row.student} ${row.roll}`.trim(), width: 100 },
+        { header: 'Student Answer', value: row => row.answer, width: 190 },
+        { header: 'AI Reason', value: row => row.aiReason, width: 190 },
+        { header: 'AI Marks', value: row => row.aiMarks || '-', width: 55 }
+    ];
+    let y = margin;
+    const addPageIfNeeded = (height = 60) => {
+        if (y + height > pageHeight - margin) {
+            docPdf.addPage();
+            y = margin;
+        }
+    };
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.setFontSize(14);
+    docPdf.text('Short Answer Report', margin, y);
+    y += 18;
+    docPdf.setFont('helvetica', 'normal');
+    docPdf.setFontSize(9);
+    docPdf.text(textForPdf(`${sectionReportContextLabel()} · ${sectionShortAnswerReviewedOnly ? 'AI reviewed only · ' : ''}Generated ${formatDate(Date.now())}`), margin, y);
+    y += 20;
+    const renderHeader = () => {
+        let x = margin;
+        docPdf.setFont('helvetica', 'bold');
+        docPdf.setFontSize(8);
+        columns.forEach(column => {
+            docPdf.text(textForPdf(column.header), x, y);
+            x += column.width;
+        });
+        y += 14;
+    };
+    renderHeader();
+    rows.forEach(row => {
+        addPageIfNeeded(72);
+        let x = margin;
+        const rowY = y;
+        let rowHeight = 14;
+        docPdf.setFont('helvetica', 'normal');
+        docPdf.setFontSize(8);
+        columns.forEach(column => {
+            const lines = docPdf.splitTextToSize(textForPdf(column.value(row)), column.width - 4).slice(0, 5);
+            lines.forEach((line, lineIndex) => docPdf.text(line, x, rowY + lineIndex * 10));
+            rowHeight = Math.max(rowHeight, lines.length * 10 + 6);
+            x += column.width;
+        });
+        y += rowHeight;
+        if (y > pageHeight - margin) {
+            docPdf.addPage();
+            y = margin;
+            renderHeader();
+        }
+    });
+    docPdf.save(`${sectionShortAnswerFileBaseName()}.pdf`);
+}
+
+function sectionShortAnswerFileBaseName() {
+    return String(`short-answer-report-${sectionReportContextLabel()}${sectionShortAnswerReviewedOnly ? '-ai-reviewed' : ''}`)
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase();
 }
 
 function sectionReportPromptListHtml(items, rows, options = {}) {
