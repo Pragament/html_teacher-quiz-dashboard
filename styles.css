@@ -762,6 +762,45 @@ button {
     line-height: 1.35;
 }
 
+.answer-table {
+    min-width: 1180px;
+}
+
+.answer-table th:nth-child(3),
+.answer-table td:nth-child(3),
+.answer-table th:nth-child(4),
+.answer-table td:nth-child(4) {
+    width: 28%;
+}
+
+.answer-table-roll {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.answer-table-prompt-card {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.75fr) minmax(320px, 1.25fr);
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--line);
+    background: #f8fafc;
+}
+
+.answer-table-prompt-card textarea {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 8px;
+    color: var(--text);
+    font-size: 12px;
+}
+
 .question-analysis-table {
     min-width: 1120px;
 }
@@ -1797,6 +1836,7 @@ button {
     .student-report-grid,
     .section-student-timeline-list,
     .section-prompt-grid,
+    .answer-table-prompt-card,
     .section-report-band-field,
     .compact-export-list,
     .question-type-grid,

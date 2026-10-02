@@ -104,6 +104,7 @@ let activeSectionId = null;
 let submissions = [];
 let submissionViewMode = 'students';
 let submissionSort = { key: 'score', direction: 'desc' };
+let answerTableSort = { key: 'student', direction: 'asc' };
 let sectionReportSubmissions = [];
 let sectionReportSort = { key: 'seen', direction: 'desc' };
 let sectionShortAnswerReviewedOnly = false;
@@ -215,8 +216,11 @@ const els = {
     studentAnalysisBtn: $('studentAnalysisBtn'),
     topicAnalysisBtn: $('topicAnalysisBtn'),
     questionAnalysisBtn: $('questionAnalysisBtn'),
+    answerTableViewBtn: $('answerTableViewBtn'),
     tableViewBtn: $('tableViewBtn'),
     cardViewBtn: $('cardViewBtn'),
+    exportAnswerTableCsvBtn: $('exportAnswerTableCsvBtn'),
+    copyAnswerTablePromptBtn: $('copyAnswerTablePromptBtn'),
     classroomDialog: $('classroomDialog'),
     editClassroomTitle: $('editClassroomTitle'),
     editClassroomForm: $('editClassroomForm'),
@@ -345,9 +349,12 @@ function bindEvents() {
     els.tourPromptForm.addEventListener('submit', startPromptedTour);
     els.exportForm.addEventListener('submit', exportSubmissionsCsv);
     $('exportCsvBtn').addEventListener('click', openExportDialog);
+    els.exportAnswerTableCsvBtn.addEventListener('click', exportAnswerTableCsv);
+    els.copyAnswerTablePromptBtn.addEventListener('click', copyAnswerTablePrompt);
     els.studentAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('students'));
     els.topicAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('topics'));
     els.questionAnalysisBtn.addEventListener('click', () => setSubmissionViewMode('questions'));
+    els.answerTableViewBtn.addEventListener('click', () => setSubmissionViewMode('answerTable'));
     els.tableViewBtn.addEventListener('click', () => setSubmissionViewMode('table'));
     els.cardViewBtn.addEventListener('click', () => setSubmissionViewMode('cards'));
     filterIds.forEach(id => $(id).addEventListener('input', render));
@@ -1267,8 +1274,11 @@ function renderSubmissions() {
     els.studentAnalysisBtn.classList.toggle('active', submissionViewMode === 'students');
     els.topicAnalysisBtn.classList.toggle('active', submissionViewMode === 'topics');
     els.questionAnalysisBtn.classList.toggle('active', submissionViewMode === 'questions');
+    els.answerTableViewBtn.classList.toggle('active', submissionViewMode === 'answerTable');
     els.tableViewBtn.classList.toggle('active', submissionViewMode === 'table');
     els.cardViewBtn.classList.toggle('active', submissionViewMode === 'cards');
+    els.exportAnswerTableCsvBtn.hidden = submissionViewMode !== 'answerTable';
+    els.copyAnswerTablePromptBtn.hidden = submissionViewMode !== 'answerTable';
     els.submissionList.className = submissionViewMode === 'cards' ? 'submission-list' : 'submission-table-wrap analysis-table-wrap';
     els.submissionList.innerHTML = sorted.length
         ? renderSubmissionView(sorted)
@@ -1287,6 +1297,9 @@ function renderSubmissions() {
     });
     document.querySelectorAll('[data-analysis-sort]').forEach(btn => {
         btn.addEventListener('click', () => setAnalysisSort(btn.dataset.analysisSort));
+    });
+    document.querySelectorAll('[data-answer-table-sort]').forEach(btn => {
+        btn.addEventListener('click', () => setAnswerTableSort(btn.dataset.answerTableSort));
     });
 }
 
@@ -1319,6 +1332,7 @@ function renderSubmissionView(items) {
     if (submissionViewMode === 'cards') return items.map(submissionCard).join('');
     if (submissionViewMode === 'topics') return topicAnalysisTable(items);
     if (submissionViewMode === 'questions') return questionAnalysisTable(items);
+    if (submissionViewMode === 'answerTable') return answerTableView(items);
     if (submissionViewMode === 'table') return submissionTable(items);
     return studentAnalysisTable(items);
 }
@@ -1356,6 +1370,49 @@ function submissionTable(items) {
                         ${questionColumns.map(column => answerCell(answerForQuestion(s, column.key).answer)).join('')}
                         <td>${esc(scoreLabel(s))}</td>
                         <td>${manualCount(s) ? esc(`${manualCount(s)} manual`) : ''}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function answerTableView(items) {
+    const rows = sortedAnswerTableRows(answerTableRows(items));
+    if (!rows.length) {
+        return '<div class="empty-card">No answer rows match these filters.</div>';
+    }
+    return `
+        <div class="answer-table-prompt-card">
+            <div>
+                <strong>Prompt with visible table data</strong>
+                <p>Use Copy Table Prompt to send these sorted answer rows for deeper analysis.</p>
+            </div>
+            <textarea readonly>${esc(buildAnswerTablePrompt(rows))}</textarea>
+        </div>
+        <table class="submission-table analysis-table answer-table">
+            <thead>
+                <tr>
+                    <th scope="col">${answerTableSortHeader('Question Type', 'type')}</th>
+                    <th scope="col">${answerTableSortHeader('Student Name', 'student')}</th>
+                    <th scope="col">${answerTableSortHeader('Question Text', 'question')}</th>
+                    <th scope="col">${answerTableSortHeader('Student Answer Text', 'answer')}</th>
+                    <th scope="col">Topic</th>
+                    <th scope="col">Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map(row => `
+                    <tr>
+                        <td>${esc(row.typeLabel)}</td>
+                        <th scope="row">
+                            <button class="table-link" type="button" data-detail="${esc(row.submissionId)}">${esc(row.studentName)}</button>
+                            <span class="answer-table-roll">${esc(row.roll)}</span>
+                        </th>
+                        <td class="analysis-text-cell">${esc(row.questionText || '-')}</td>
+                        <td class="analysis-text-cell">${esc(row.answerText || '-')}</td>
+                        <td class="analysis-text-cell">${esc(row.topic || 'Unmapped')}</td>
+                        <td>${esc(row.resultLabel)}</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -2698,6 +2755,61 @@ function setAnalysisSort(key) {
     renderSubmissions();
 }
 
+function answerTableSortHeader(label, key) {
+    const active = answerTableSort.key === key;
+    const direction = active ? answerTableSort.direction === 'asc' ? 'ASC' : 'DESC' : 'SORT';
+    return `<button class="sort-head-btn ${active ? 'active' : ''}" type="button" data-answer-table-sort="${key}">${esc(label)} <span>${direction}</span></button>`;
+}
+
+function setAnswerTableSort(key) {
+    answerTableSort = answerTableSort.key === key
+        ? { key, direction: answerTableSort.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' };
+    renderSubmissions();
+}
+
+function answerTableRows(items = filteredSubmissions()) {
+    const rows = [];
+    items.forEach(submission => {
+        answersMatchingQuestionType(submission).forEach(({ answer, index }) => {
+            const marks = answerMarks(submission, answer, index);
+            rows.push({
+                submissionId: submission.id,
+                studentName: submission.studentName || 'Student',
+                roll: submission.admissionNo || '',
+                date: formatDate(submissionSubmittedMillis(submission)),
+                session: quizSessionLabel(submission),
+                type: normalizedQuestionType(answer),
+                typeLabel: questionTypeLabel(normalizedQuestionType(answer)),
+                questionText: questionTitleForAnswer(answer),
+                answerText: answerResponseText(answer),
+                topic: topicLabelForAnswer(answer, submission),
+                resultLabel: answerResultLabel(answer, marks),
+                marks
+            });
+        });
+    });
+    return rows;
+}
+
+function sortedAnswerTableRows(rows) {
+    return [...rows].sort((a, b) => {
+        let result = 0;
+        if (answerTableSort.key === 'type') result = compareText(a.typeLabel, b.typeLabel);
+        else if (answerTableSort.key === 'question') result = compareText(a.questionText, b.questionText);
+        else if (answerTableSort.key === 'answer') result = compareText(a.answerText, b.answerText);
+        else result = compareText(a.studentName, b.studentName) || compareText(a.roll, b.roll);
+        return answerTableSort.direction === 'asc' ? result : -result;
+    });
+}
+
+function answerResultLabel(answer, marks) {
+    if (marks === null) return answerResponseText(answer) ? 'Needs review' : 'No answer';
+    if (marks >= 4) return 'Correct';
+    if (marks > 0) return `Partial (${formatMarks(marks)}/4)`;
+    return 'Wrong';
+}
+
 function compareStudentAnalysisRows(a, b) {
     const sort = analysisSort.students;
     let result = 0;
@@ -3369,6 +3481,82 @@ function exportSubmissionsCsv(event) {
     });
     els.exportDialog.close();
     downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' }), 'teacher-quiz-submissions.csv');
+}
+
+function exportAnswerTableCsv() {
+    const rows = sortedAnswerTableRows(answerTableRows(filteredSubmissions()));
+    if (!rows.length) {
+        toast('No answer rows to export');
+        return;
+    }
+    const csvRows = [
+        ['Question Type', 'Student Name', 'Roll', 'Question Text', 'Student Answer Text', 'Topic', 'Result', 'Quiz Session', 'Submitted At'],
+        ...rows.map(row => [
+            row.typeLabel,
+            row.studentName,
+            row.roll,
+            row.questionText,
+            row.answerText,
+            row.topic,
+            row.resultLabel,
+            row.session,
+            row.date
+        ])
+    ];
+    downloadBlob(new Blob([toCsv(csvRows)], { type: 'text/csv;charset=utf-8' }), answerTableFileName());
+}
+
+async function copyAnswerTablePrompt() {
+    const rows = sortedAnswerTableRows(answerTableRows(filteredSubmissions()));
+    if (!rows.length) {
+        toast('No answer rows to copy');
+        return;
+    }
+    const text = buildAnswerTablePrompt(rows);
+    try {
+        await navigator.clipboard.writeText(text);
+        toast('Table prompt copied');
+    } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+        toast('Table prompt copied');
+    }
+}
+
+function buildAnswerTablePrompt(rows) {
+    const classroom = findClassroom(activeClassroomId);
+    const context = [
+        `Quiz session: ${quizSessionLabelForClassroom(classroom)}`,
+        `Visible answer rows: ${rows.length}`,
+        `Question type filter: ${$('questionTypeFilter')?.value ? questionTypeLabel($('questionTypeFilter').value) : 'Any'}`,
+        `Student filter: ${$('studentSearch')?.value || 'Any'}`,
+        `Subject filter: ${$('subjectFilter')?.value || 'Any'}`,
+        `Chapter filter: ${$('chapterFilter')?.value || 'Any'}`
+    ].join('\n');
+    const rowLines = rows.slice(0, 150).map((row, index) => {
+        return `${index + 1}. [${row.typeLabel}] ${row.studentName}${row.roll ? ` (${row.roll})` : ''} | Question: ${compactPromptText(row.questionText)} | Student answer: ${compactPromptText(row.answerText || 'No answer')} | Result: ${row.resultLabel}`;
+    }).join('\n');
+    const truncated = rows.length > 150 ? `\n\nNote: ${rows.length - 150} additional visible rows were omitted to keep the prompt manageable. Use CSV export for the complete table.` : '';
+    return `Act as an assessment analyst for a teacher. Use the quiz submission answer table below to identify patterns in student performance. Summarize common misconceptions, which students need support, which question types are causing difficulty, and suggest targeted reteach and practice actions.\n\n${context}\n\nAnswer table rows:\n${rowLines}${truncated}`;
+}
+
+function compactPromptText(value) {
+    return normalizeExportText(value).replace(/\s+/g, ' ').trim().slice(0, 280);
+}
+
+function answerTableFileName() {
+    const classroom = findClassroom(activeClassroomId);
+    return String(`quiz-answer-table-${quizSessionLabelForClassroom(classroom)}.csv`)
+        .replace(/[^a-z0-9.]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase();
 }
 
 function loadExportSettings() {
