@@ -308,7 +308,7 @@ function bindEvents() {
     els.sectionReportStartDate.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportEndDate.addEventListener('change', renderSectionQuestionReport);
     els.sectionReportBandFilters.addEventListener('change', renderSectionQuestionReport);
-    els.sectionReportTimeline.addEventListener('click', handleSectionReportBandLegendClick);
+    els.sectionReportTimeline.addEventListener('click', handleSectionReportTimelineClick);
     els.sectionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
     els.sessionReportPrompts.addEventListener('click', handleSectionReportPromptCopy);
     els.sectionReportList.addEventListener('click', handleSectionReportSortClick);
@@ -1300,7 +1300,8 @@ function renderSessionReportPrompts(items) {
         title: 'Quiz Session Remedial Prompts',
         description: 'Copy prompts based only on the current quiz session submissions.',
         contextLabel: quizSessionLabelForClassroom(classroom),
-        contextType: 'Quiz session'
+        contextType: 'Quiz session',
+        scoreFn: scoreDetails
     });
 }
 
@@ -1513,7 +1514,7 @@ function filteredSectionReportSubmissions() {
         if (endMillis !== null && (!submittedMillis || submittedMillis > endMillis)) return false;
         return true;
     });
-    const visibleStudents = new Set(sectionStudentTimelineRows(dateFiltered)
+    const visibleStudents = new Set(sectionStudentTimelineRows(dateFiltered, sectionReportSubmissionScoreDetails)
         .filter(row => selectedBands.has(performanceBand(row.averagePercent).key))
         .map(row => row.key));
     return dateFiltered.filter(submission => visibleStudents.has(studentIdentityKey(submission)));
@@ -1547,14 +1548,15 @@ function dateInputEndMillis(value) {
 }
 
 function sectionStudentTimelineHtml(items) {
-    const rows = sectionStudentTimelineRows(items);
+    const rows = sectionStudentTimelineRows(items, sectionReportSubmissionScoreDetails);
     if (!rows.length) return '<div class="empty-card">No scored student submissions found for this section.</div>';
     const allAttempts = rows.reduce((sum, row) => sum + row.submissions.length, 0);
+    const typeLabel = sectionReportQuestionTypeLabel();
     return `
         <div class="section-report-block-head">
             <div>
                 <h3>Student Timeline Progress</h3>
-                <p>${rows.length} student${rows.length === 1 ? '' : 's'} · ${allAttempts} submission${allAttempts === 1 ? '' : 's'} across enabled quiz sessions</p>
+                <p>${rows.length} student${rows.length === 1 ? '' : 's'} · ${allAttempts} submission${allAttempts === 1 ? '' : 's'} across enabled quiz sessions · ${esc(typeLabel)}</p>
             </div>
             <div class="timeline-band-legend" aria-label="Performance bands">
                 ${sectionReportBandLegendHtml()}
@@ -1577,7 +1579,7 @@ function sectionStudentTimelineHtml(items) {
                             </div>
                         </div>
                         <div class="section-student-timeline-track">
-                            ${row.submissions.map(submission => sectionStudentTimelinePoint(submission)).join('')}
+                            ${row.submissions.map(submission => sectionStudentTimelinePoint(submission, sectionReportSubmissionScoreDetails)).join('')}
                         </div>
                     </article>
                 `;
@@ -1604,6 +1606,21 @@ function handleSectionReportBandLegendClick(event) {
     if (!checkbox) return;
     checkbox.checked = !checkbox.checked;
     renderSectionQuestionReport();
+}
+
+function handleSectionReportTimelineClick(event) {
+    const detailButton = event.target.closest('[data-section-timeline-detail]');
+    if (detailButton) {
+        openSectionTimelineSubmissionDetail(detailButton.dataset.sectionTimelineDetail);
+        return;
+    }
+    handleSectionReportBandLegendClick(event);
+}
+
+function openSectionTimelineSubmissionDetail(id) {
+    const submission = sectionReportSubmissions.find(item => item.id === id);
+    if (!submission) return;
+    openSubmissionDetailFromRecord(submission);
 }
 
 function sectionReportPromptListHtml(items, rows, options = {}) {
@@ -1671,7 +1688,8 @@ function sectionReportPrompts(items, rows, options = {}) {
 }
 
 function sectionReportPromptContext(items, rows, options = {}) {
-    const studentRows = sectionStudentTimelineRows(items);
+    const scoreFn = options.scoreFn || sectionReportSubmissionScoreDetails;
+    const studentRows = sectionStudentTimelineRows(items, scoreFn);
     const bandCounts = SECTION_REPORT_BANDS.map(({ key, samplePercent }) => {
         const band = performanceBand(samplePercent);
         const count = studentRows.filter(row => performanceBand(row.averagePercent).key === key).length;
@@ -1736,10 +1754,10 @@ async function handleSectionReportPromptCopy(event) {
     }
 }
 
-function sectionStudentTimelineRows(items) {
+function sectionStudentTimelineRows(items, scoreFn = scoreDetails) {
     const students = new Map();
     items
-        .filter(submission => scoreDetails(submission).maxMarks > 0)
+        .filter(submission => scoreFn(submission).maxMarks > 0)
         .forEach(submission => {
             const key = studentIdentityKey(submission);
             if (!students.has(key)) {
@@ -1754,7 +1772,7 @@ function sectionStudentTimelineRows(items) {
         });
     const rows = Array.from(students.values()).map(row => {
         row.submissions.sort((a, b) => (a.submittedAtMillis || 0) - (b.submittedAtMillis || 0));
-        const percentages = row.submissions.map(scorePercent);
+        const percentages = row.submissions.map(submission => scoreFn(submission).percent);
         row.averagePercent = percentages.length
             ? Math.round(percentages.reduce((sum, percent) => sum + percent, 0) / percentages.length)
             : 0;
@@ -1774,15 +1792,16 @@ function studentIdentityKey(submission) {
     return submission.id || `${submission.studentName || 'Student'}:${submission.submittedAtMillis || ''}`;
 }
 
-function sectionStudentTimelinePoint(submission) {
-    const percent = scorePercent(submission);
+function sectionStudentTimelinePoint(submission, scoreFn = scoreDetails) {
+    const score = scoreFn(submission);
+    const percent = score.percent;
     const band = performanceBand(percent);
-    const title = `${formatDate(submission.submittedAtMillis)} · ${quizSessionLabel(submission)} · ${scoreLabel(submission)}`;
+    const title = `${formatDate(submission.submittedAtMillis)} · ${quizSessionLabel(submission)} · ${formatMarks(score.earnedMarks)}/${formatMarks(score.maxMarks)} (${percent}%)`;
     return `
-        <span class="section-timeline-point" title="${esc(title)}">
+        <button class="section-timeline-point" type="button" data-section-timeline-detail="${esc(submission.id)}" title="${esc(title)}">
             <span class="timeline-score-dot ${esc(band.className)}">${percent}%</span>
             <small>${esc(shortDate(submission.submittedAtMillis))}</small>
-        </span>
+        </button>
     `;
 }
 
@@ -2648,6 +2667,10 @@ function submissionCard(s) {
 function openSubmissionDetail(id) {
     const s = submissions.find(item => item.id === id);
     if (!s) return;
+    openSubmissionDetailFromRecord(s);
+}
+
+function openSubmissionDetailFromRecord(s) {
     els.detailTitle.textContent = s.studentName || 'Submission Details';
     els.detailMeta.textContent = `${s.admissionNo || ''} · ${formatDate(s.submittedAtMillis)} · ${s.subject || 'Any subject'}`;
     els.detailStats.innerHTML = `
@@ -3597,6 +3620,31 @@ function scoreDetails(submission) {
         maxMarks,
         percent: maxMarks ? Math.round((earnedMarks / maxMarks) * 100) : 0
     };
+}
+
+function sectionReportSubmissionScoreDetails(submission) {
+    const typeFilter = els.sectionReportQuestionType.value;
+    if (!typeFilter) return scoreDetails(submission);
+    const matchingAnswers = (submission.answers || [])
+        .map((answer, index) => ({ answer, index }))
+        .filter(({ answer }) => normalizedQuestionType(answer) === typeFilter);
+    const maxMarks = matchingAnswers.length * 4;
+    const earnedMarks = matchingAnswers.reduce((sum, { answer, index }) => {
+        const review = getAiReview(submission, answer, index);
+        if (hasSavedAiReview(review)) return sum + Number(review.marks || 0);
+        if (answer?.isCorrect === true) return sum + 4;
+        return sum;
+    }, 0);
+    return {
+        earnedMarks,
+        maxMarks,
+        percent: maxMarks ? Math.round((earnedMarks / maxMarks) * 100) : 0
+    };
+}
+
+function sectionReportQuestionTypeLabel() {
+    const typeFilter = els.sectionReportQuestionType.value;
+    return typeFilter ? `${questionTypeLabel(typeFilter)} only` : 'All question types';
 }
 
 function formatMarks(value) {
