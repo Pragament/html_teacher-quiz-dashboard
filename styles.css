@@ -937,6 +937,16 @@ button {
     display: grid;
     gap: 4px;
     justify-items: center;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    text-align: center;
+}
+
+.section-timeline-point:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
 }
 
 .timeline-score-dot {
