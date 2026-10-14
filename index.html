@@ -391,24 +391,45 @@
                     <input id="editClassCode" autocomplete="off" placeholder="Session code" />
                 </label>
                 <label class="field">
-                    <span>Class Section</span>
-                    <select id="editSectionId"></select>
+                    <span>Mode *</span>
+                    <select id="editSessionMode" required>
+                        <option value="quiz">Quiz</option>
+                        <option value="practice">Practice</option>
+                        <option value="wpt">WPT - Writing Proficiency Test</option>
+                        <option value="rpt">RPT - Reading Proficiency Test</option>
+                        <option value="reading_practice">Reading Practice</option>
+                        <option value="writing_practice">Writing Practice</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Class Section *</span>
+                    <select id="editSectionId" required></select>
                 </label>
                 <label class="field">
                     <span>Question List</span>
                     <select id="editQuestionBankList"></select>
                 </label>
-                <label class="field taxonomy-field">
-                    <span>Class</span>
-                    <select id="editTaxonomyClassId"></select>
+                <label class="field">
+                    <span>Start Date &amp; Time</span>
+                    <input id="editStartAt" type="datetime-local" />
+                    <small>Optional · your local time</small>
+                </label>
+                <label class="field">
+                    <span>Due Date &amp; Time</span>
+                    <input id="editDueAt" type="datetime-local" />
+                    <small>Optional · your local time</small>
                 </label>
                 <label class="field taxonomy-field">
-                    <span>Subject</span>
-                    <select id="editTaxonomySubjectId"></select>
+                    <span>Class *</span>
+                    <select id="editTaxonomyClassId" required></select>
                 </label>
                 <label class="field taxonomy-field">
-                    <span>Chapter</span>
-                    <select id="editTaxonomyChapterId"></select>
+                    <span>Subject *</span>
+                    <select id="editTaxonomySubjectId" required></select>
+                </label>
+                <label class="field taxonomy-field">
+                    <span>Chapter *</span>
+                    <select id="editTaxonomyChapterId" required></select>
                 </label>
             </div>
             <label class="toggle-field">

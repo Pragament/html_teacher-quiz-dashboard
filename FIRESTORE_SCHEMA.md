@@ -27,6 +27,9 @@ Document shape:
   classCode: '176260',
   classEnabled: true,
   className: 'DSS grade 8 aug 31 quiz',
+  mode: 'quiz',
+  startAt: Timestamp, // optional
+  dueAt: Timestamp, // optional
   createdBy: '',
   createdAt: Timestamp,
   createdDate: 1788177950135,
@@ -60,6 +63,9 @@ Important fields:
 - `creatorId` - must match the signed-in teacher UID for the classroom to appear.
 - `classCode` - shown in classroom cards and used as a submission lookup fallback.
 - `classEnabled` - shown as enabled/disabled.
+- `mode` - session mode selected in the create/edit form. Saved as one of the string values below. New sessions default to `quiz`; existing sessions without `mode` display Quiz and save `quiz` when edited.
+- `startAt` - optional quiz session start date and time, stored as a Firestore `Timestamp`.
+- `dueAt` - optional quiz session due date and time, stored as a Firestore `Timestamp`.
 - `sectionId` - links the quiz session to a class section.
 - `sectionName` - shown in the dashboard.
 - `questionBankListId` - optional reference to a private question list selected by the teacher.
@@ -70,7 +76,22 @@ Important fields:
 - `studentDifficultyLevels` - optional admission-number keyed difficulty overrides. Missing student entries use the quiz session default question selection.
 - `archived` - optional soft archive flag. Teachers can archive and unarchive quiz sessions they created.
 
+The create/edit Quiz Session form requires Mode, Class Section (`sectionId`), Class (`classId`), Subject (`subjectId`), and Chapter (`chapterId`). Existing documents may omit section or taxonomy IDs, but those selections must be completed before saving through this form.
+
 Quiz session taxonomy selections intentionally store IDs only. Do not duplicate class, subject, or chapter labels on the `classrooms` document; labels are read from `qb_taxonomy_v1`.
+
+Session mode values:
+
+| Stored value | Dropdown label |
+| --- | --- |
+| `quiz` | Quiz |
+| `practice` | Practice |
+| `wpt` | WPT - Writing Proficiency Test |
+| `rpt` | RPT - Reading Proficiency Test |
+| `reading_practice` | Reading Practice |
+| `writing_practice` | Writing Practice |
+
+The quiz session create/edit form displays and accepts `startAt` and `dueAt` in the teacher's browser local time, then converts them to Firestore timestamps representing absolute instants. Either field may be left blank independently. Blank fields are omitted on creation; clearing a saved field deletes it on update. Existing sessions without these fields display empty date/time inputs and require no migration. When both fields are set, the form requires `dueAt` to be strictly after `startAt`.
 
 ### `classSections`
 

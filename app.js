@@ -16,6 +16,7 @@ import {
     getFirestore,
     query,
     serverTimestamp,
+    Timestamp,
     updateDoc,
     where
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -229,6 +230,9 @@ const els = {
     editClassroomId: $('editClassroomId'),
     editClassroomName: $('editClassroomName'),
     editClassCode: $('editClassCode'),
+    editSessionMode: $('editSessionMode'),
+    editStartAt: $('editStartAt'),
+    editDueAt: $('editDueAt'),
     editSectionId: $('editSectionId'),
     editClassEnabled: $('editClassEnabled'),
     editQuestionBankList: $('editQuestionBankList'),
@@ -854,6 +858,9 @@ async function openClassroomCreator(options = {}) {
     const modal = options.modal !== false;
     els.editClassroomTitle.textContent = 'Create Quiz Session';
     els.editClassroomId.value = '';
+    els.editSessionMode.value = 'quiz';
+    els.editStartAt.value = '';
+    els.editDueAt.value = '';
     els.editClassroomName.value = '';
     els.editClassroomName.disabled = true;
     els.editClassCode.value = await generateUniqueClassCode();
@@ -879,7 +886,7 @@ function ensureClassroomCreatorOpen() {
 
 function renderSectionOptions(selectedSectionId = '') {
     els.editSectionId.innerHTML = `
-        <option value="">No class section</option>
+        <option value="">Select class section</option>
         ${classSections.map(section => `<option value="${esc(section.id)}">${esc(sectionLabel(section))}</option>`).join('')}
     `;
     els.editSectionId.value = classSections.some(section => section.id === selectedSectionId) ? selectedSectionId : '';
@@ -889,7 +896,7 @@ function renderQuizSessionTaxonomyFields(selection = {}) {
     const requestedClassId = selection.classId ?? els.editTaxonomyClassId.value;
     const classNodes = taxonomyNodes.filter(node => node.type === 'class');
     const classId = classNodes.some(node => node.id === requestedClassId) ? requestedClassId : '';
-    els.editTaxonomyClassId.innerHTML = taxonomySelectOptions('No class taxonomy', classNodes);
+    els.editTaxonomyClassId.innerHTML = taxonomySelectOptions('Select class', classNodes);
     els.editTaxonomyClassId.value = classId;
 
     const requestedSubjectId = selection.subjectId ?? els.editTaxonomySubjectId.value;
@@ -899,7 +906,7 @@ function renderQuizSessionTaxonomyFields(selection = {}) {
         return node.classId === classId || node.parentId === classId;
     });
     const subjectId = subjectNodes.some(node => node.id === requestedSubjectId) ? requestedSubjectId : '';
-    els.editTaxonomySubjectId.innerHTML = taxonomySelectOptions('No subject taxonomy', subjectNodes);
+    els.editTaxonomySubjectId.innerHTML = taxonomySelectOptions('Select subject', subjectNodes);
     els.editTaxonomySubjectId.value = subjectId;
 
     const requestedChapterId = selection.chapterId ?? els.editTaxonomyChapterId.value;
@@ -910,7 +917,7 @@ function renderQuizSessionTaxonomyFields(selection = {}) {
         return true;
     });
     const chapterId = chapterNodes.some(node => node.id === requestedChapterId) ? requestedChapterId : '';
-    els.editTaxonomyChapterId.innerHTML = taxonomySelectOptions('No chapter taxonomy', chapterNodes);
+    els.editTaxonomyChapterId.innerHTML = taxonomySelectOptions('Select chapter', chapterNodes);
     els.editTaxonomyChapterId.value = chapterId;
     updateCreateQuizSessionName();
 }
@@ -954,8 +961,9 @@ function setQuizSessionTaxonomyFieldsVisible(visible) {
 function updateCreateQuizSessionName() {
     if (els.editClassroomId.value) return;
     const labels = [els.editTaxonomyClassId, els.editTaxonomySubjectId, els.editTaxonomyChapterId]
+        .filter(select => select.value)
         .map(select => select.selectedOptions[0]?.textContent || '')
-        .filter(label => label && !label.startsWith('No '));
+        .filter(Boolean);
     els.editClassroomName.value = labels.join(' - ');
 }
 
@@ -964,6 +972,9 @@ function openClassroomEditor(classroomId) {
     if (!classroom) return;
     els.editClassroomTitle.textContent = `Edit Quiz Session: ${classroom.className || classroom.classCode || classroom.id}`;
     els.editClassroomId.value = classroom.id;
+    els.editSessionMode.value = classroom.mode || 'quiz';
+    els.editStartAt.value = sessionDateTimeInputValue(classroom.startAt);
+    els.editDueAt.value = sessionDateTimeInputValue(classroom.dueAt);
     els.editClassroomName.value = classroom.className || '';
     els.editClassroomName.disabled = false;
     els.editClassCode.value = classroom.classCode || '';
@@ -985,9 +996,37 @@ function openClassroomEditor(classroomId) {
     els.classroomDialog.showModal();
 }
 
+function sessionDateTimeInputValue(value) {
+    if (value == null) return '';
+    const date = value.toDate ? value.toDate() : new Date(value.seconds != null ? value.seconds * 1000 : value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const pad = number => String(number).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 async function saveClassroomEdit(event) {
     event.preventDefault();
     if (!currentUser) return;
+    if (!els.editClassroomForm.reportValidity()) return;
+    const mode = els.editSessionMode.value;
+    if (!['quiz', 'practice', 'wpt', 'rpt', 'reading_practice', 'writing_practice'].includes(mode)) {
+        toast('Select a valid session mode');
+        els.editSessionMode.focus();
+        return;
+    }
+    const startDate = els.editStartAt.value ? new Date(els.editStartAt.value) : null;
+    const dueDate = els.editDueAt.value ? new Date(els.editDueAt.value) : null;
+    if ((startDate && !Number.isFinite(startDate.getTime())) || (dueDate && !Number.isFinite(dueDate.getTime()))) {
+        toast('Enter a valid start and due date/time');
+        return;
+    }
+    if (startDate && dueDate && dueDate <= startDate) {
+        toast('Due date/time must be after the start date/time');
+        els.editDueAt.focus();
+        return;
+    }
+    const startAt = startDate ? Timestamp.fromDate(startDate) : null;
+    const dueAt = dueDate ? Timestamp.fromDate(dueDate) : null;
     const classroomId = els.editClassroomId.value;
     const classroom = findClassroom(classroomId);
     const questionBankListId = els.editQuestionBankList.value;
@@ -999,8 +1038,11 @@ async function saveClassroomEdit(event) {
     const updates = {
         className,
         classCode,
+        mode,
         classEnabled: els.editClassEnabled.checked,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        startAt: startAt || deleteField(),
+        dueAt: dueAt || deleteField()
     };
     if (selectedSection) {
         updates.sectionId = selectedSection.id;
@@ -1035,12 +1077,15 @@ async function saveClassroomEdit(event) {
         const createValues = {
             className,
             classCode,
+            mode,
             classEnabled: els.editClassEnabled.checked
         };
         if (selectedSection) {
             createValues.sectionId = selectedSection.id;
             createValues.sectionName = sectionLabel(selectedSection);
         }
+        if (startAt) createValues.startAt = startAt;
+        if (dueAt) createValues.dueAt = dueAt;
         if (selectedList) createValues.questionBankListId = selectedList.id;
         applyQuizSessionTaxonomyToValues(createValues, selectedTaxonomy);
         if (randomQuestionTypeCounts) createValues.randomQuestionTypeCounts = randomQuestionTypeCounts;
@@ -1054,6 +1099,8 @@ async function saveClassroomEdit(event) {
         const updatedClassroom = {
             ...classroom,
             ...updates,
+            startAt: startAt || undefined,
+            dueAt: dueAt || undefined,
             sectionId: selectedSection?.id,
             sectionName: selectedSection ? sectionLabel(selectedSection) : undefined,
             questionBankListId: selectedList?.id,
