@@ -348,6 +348,7 @@ function bindEvents() {
     els.editTaxonomyClassId.addEventListener('change', () => renderQuizSessionTaxonomyFields());
     els.editTaxonomySubjectId.addEventListener('change', () => renderQuizSessionTaxonomyFields());
     els.editTaxonomyChapterId.addEventListener('change', updateCreateQuizSessionName);
+    els.editSessionMode.addEventListener('change', updateCreateQuizSessionName);
     $('skipStudentDifficultyBtn').addEventListener('click', () => els.studentDifficultyDialog.close());
     $('cancelExportBtn').addEventListener('click', () => els.exportDialog.close());
     els.editClassroomForm.addEventListener('submit', saveClassroomEdit);
@@ -960,7 +961,7 @@ function setQuizSessionTaxonomyFieldsVisible(visible) {
 
 function updateCreateQuizSessionName() {
     if (els.editClassroomId.value) return;
-    const labels = [els.editTaxonomyClassId, els.editTaxonomySubjectId, els.editTaxonomyChapterId]
+    const labels = [els.editTaxonomyClassId, els.editTaxonomySubjectId, els.editTaxonomyChapterId, els.editSessionMode]
         .filter(select => select.value)
         .map(select => select.selectedOptions[0]?.textContent || '')
         .filter(Boolean);
