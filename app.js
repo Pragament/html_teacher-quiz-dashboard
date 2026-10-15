@@ -95,6 +95,7 @@ let currentUser = null;
 let classrooms = [];
 let classSections = [];
 let classSectionsLoadError = null;
+let submissionsLoadNotice = '';
 let sectionStudents = [];
 let sectionClassrooms = [];
 let questionBankLists = [];
@@ -644,30 +645,53 @@ async function refreshActive() {
     await loadClassrooms();
 }
 
+// Historical submissions may store a session code instead of a classroom document ID.
+// That lookup cannot satisfy the ownership rule unless the code is itself a document ID.
+async function fetchClassroomSubmissions(classroom) {
+    const byId = new Map();
+    const section = classSections.find(item => item.id === classroom.sectionId);
+    const sectionConstraints = section && canAdminSection(section)
+        ? [where('sectionId', '==', section.id)] : [];
+    const read = async classroomId => {
+        const constraints = classroomId === classroom.id && classroom.creatorId === currentUser.uid
+            ? [] : sectionConstraints;
+        const snap = await getDocs(query(collection(db, COLLECTIONS.submissions),
+            where('classroomId', '==', classroomId), ...constraints));
+        snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
+    };
+    await read(classroom.id);
+    let notice = '';
+    if (classroom.classCode && classroom.classCode !== classroom.id) {
+        try {
+            await read(classroom.classCode);
+        } catch (error) {
+            if (error.code !== 'permission-denied') throw error;
+            console.warn('Legacy session-code submissions were denied', error);
+            notice = 'Some historical submissions may be unavailable: session-code lookup was denied. Migrate their classroomId to the classroom document ID using a trusted admin tool.';
+        }
+    }
+    return { items: Array.from(byId.values()), notice };
+}
+
 async function loadSubmissionsForClassroom(classroomId) {
     const classroom = findClassroom(classroomId);
     if (!classroom) return;
     setStatus('Loading submissions...');
     activeClassroomId = classroomId;
     renderClassrooms();
-    const byId = new Map();
-    const queries = [
-        query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))
-    ];
-    if (classroom.classCode && classroom.classCode !== classroom.id) {
-        queries.push(query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.classCode)));
-    }
+    submissionsLoadNotice = '';
     try {
-        for (const q of queries) {
-            const snap = await getDocs(q);
-            snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() }));
-        }
-        submissions = Array.from(byId.values()).sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
+        const result = await fetchClassroomSubmissions(classroom);
+        submissions = result.items.sort((a, b) => (b.submittedAtMillis || 0) - (a.submittedAtMillis || 0));
+        submissionsLoadNotice = result.notice;
         await loadQuestionMetadataForSubmissions(submissions);
         setStatus(`${submissions.length} submission${submissions.length === 1 ? '' : 's'} loaded`);
         render();
     } catch (error) {
         submissions = [];
+        submissionsLoadNotice = error.code === 'permission-denied'
+            ? 'Submission access denied. Check the deployed Firestore rules and classroom ownership.'
+            : 'Unable to load submissions. Try Refresh.';
         setStatus(error.message || 'Unable to load submissions');
         render();
     }
@@ -1261,6 +1285,7 @@ async function loadSectionQuestionReport() {
             .map(d => ({ id: d.id, ...d.data() }))
             .filter(classroom => classroom.classEnabled === true);
         const byId = new Map();
+        const submissionNotices = new Set();
         if (!enabledClassrooms.length) {
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · No enabled quiz sessions found`;
         }
@@ -1271,22 +1296,13 @@ async function loadSectionQuestionReport() {
             els.sectionReportPrompts.innerHTML = `<div class="empty-card">Loading remedial teaching prompts... ${percent}%</div>`;
             els.sectionShortAnswerReport.innerHTML = `<div class="empty-card">Loading short-answer report... ${percent}%</div>`;
             els.sectionReportList.innerHTML = `<div class="empty-card">Loading section question report... ${percent}%</div>`;
-            const queries = [query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.id))];
-            if (classroom.classCode && classroom.classCode !== classroom.id) {
-                queries.push(query(collection(db, COLLECTIONS.submissions), where('classroomId', '==', classroom.classCode)));
-            }
-            for (const submissionQuery of queries) {
-                const snap = await getDocs(submissionQuery);
-                snap.docs.forEach(d => {
-                    const data = d.data();
-                    byId.set(d.id, {
-                        id: d.id,
-                        ...data,
-                        className: data.className || classroom.className || '',
-                        classroomName: data.classroomName || classroom.className || classroom.classCode || classroom.id
-                    });
-                });
-            }
+            const result = await fetchClassroomSubmissions(classroom);
+            if (result.notice) submissionNotices.add(result.notice);
+            result.items.forEach(data => byId.set(data.id, {
+                ...data,
+                className: data.className || classroom.className || '',
+                classroomName: data.classroomName || classroom.className || classroom.classCode || classroom.id
+            }));
             const donePercent = Math.round(((index + 1) / enabledClassrooms.length) * 100);
             els.sectionReportSummary.textContent = `${sectionLabel(section)} · Processed ${index + 1}/${enabledClassrooms.length} quiz sessions (${donePercent}%)`;
             els.sectionReportTimeline.innerHTML = `<div class="empty-card">Loading student timeline progress... ${donePercent}%</div>`;
@@ -1308,6 +1324,7 @@ async function loadSectionQuestionReport() {
         });
         els.sectionReportSummary.textContent = `${sectionLabel(section)} · ${enabledClassrooms.length} enabled quiz session${enabledClassrooms.length === 1 ? '' : 's'} · ${sectionReportSubmissions.length} submission${sectionReportSubmissions.length === 1 ? '' : 's'}`;
         renderSectionQuestionReport();
+        if (submissionNotices.size) els.sectionReportSummary.textContent += ` · ${Array.from(submissionNotices).join(' ')}`;
     } catch (error) {
         sectionReportSubmissions = [];
         els.sectionReportSummary.textContent = error.message || 'Unable to load section question report';
@@ -1331,6 +1348,7 @@ function renderSubmissions() {
     const filtered = filteredSubmissions();
     const sorted = sortedSubmissions(filtered);
     els.submissionSummary.textContent = `${filtered.length} visible of ${submissions.length} loaded submissions`;
+    if (submissionsLoadNotice) els.submissionSummary.textContent += ` · ${submissionsLoadNotice}`;
     renderSessionReportPrompts(filtered);
     els.studentAnalysisBtn.classList.toggle('active', submissionViewMode === 'students');
     els.topicAnalysisBtn.classList.toggle('active', submissionViewMode === 'topics');
