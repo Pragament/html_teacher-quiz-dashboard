@@ -6,6 +6,47 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Student access is additive to the teacher/admin permissions below.
+    function profile() {
+      return get(/databases/$(database)/documents/studentProfiles/$(request.auth.uid)).data;
+    }
+
+    function activeStudent() {
+      return signedIn() && profile().active == true
+        && profile().authUid == request.auth.uid;
+    }
+
+    function submissionOwner(data) {
+      return data.authUid == request.auth.uid
+        && data.email == request.auth.token.email
+        && data.studentKey == profile().studentKey
+        && data.sectionId == profile().sectionId
+        && data.admissionNo == profile().admissionNo
+        && data.answers is list && data.questionCount is int;
+    }
+
+    function submissionClassroom(data) {
+      let classroom = get(/databases/$(database)/documents/classrooms/$(data.classroomId)).data;
+      return classroom.sectionId == profile().sectionId
+        && classroom.classEnabled == true && classroom.get('archived', false) != true;
+    }
+
+    function practiceDraft(data) {
+      return data.get('practiceProgress', false) == true
+        && data.get('status', '') in ['in_progress', 'paused'];
+    }
+
+    function validPracticeDraft(data) {
+      let classroom = get(/databases/$(database)/documents/classrooms/$(data.classroomId)).data;
+      return practiceDraft(data)
+        && classroom.get('mode', '') in ['practice', 'reading_practice', 'writing_practice']
+        && data.progressVersion == 1 && data.practiceState is string
+        && data.practiceState.size() < 900000
+        && data.questionCount > 0 && data.answers.size() == data.questionCount
+        && data.currentIndex is int && data.currentIndex >= 0 && data.currentIndex < data.questionCount
+        && data.updatedAtMillis is number;
+    }
+
     function isSchoolAdmin() {
       return signedIn()
         && exists(/databases/$(database)/documents/schoolAdmins/$(request.auth.uid));
@@ -90,6 +131,22 @@ service cloud.firestore {
       && request.resource.data.aiReviewUpdatedByEmail == request.auth.token.email;
     }
 
+    match /studentProfiles/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+
+    // Taxonomy labels are shared metadata used by the teacher and student apps.
+    match /qb_taxonomy_v1/{taxonomyId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /qb_questions_v1/{questionId} {
+      allow read: if activeStudent() && resource.data.status == 'published';
+      allow write: if false;
+    }
+
     match /classSections/{sectionId} {
       allow read: if canViewSection(resource.data);
       allow create: if isSchoolAdmin();
@@ -107,6 +164,7 @@ service cloud.firestore {
     }
 
     match /classrooms/{classroomId} {
+      allow read: if activeStudent() && resource.data.sectionId == profile().sectionId;
       allow read: if signedIn()
         && (resource.data.creatorId == request.auth.uid || canAdminClassroomSection(resource.data));
       allow create: if signedIn()
@@ -122,6 +180,7 @@ service cloud.firestore {
     }
 
     match /qb_lists_v1/{listId} {
+      allow read: if activeStudent();
       allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update: if signedIn()
@@ -138,7 +197,23 @@ service cloud.firestore {
       allow read: if canReviewSubmission(resource.data);
 
       allow update: if canReviewSubmission(resource.data) && isAiReviewUpdate();
-      allow create, delete: if false;
+      // Also permits the student's historical submissions without authUid.
+      allow read: if activeStudent() && resource.data.studentKey == profile().studentKey;
+      allow create: if activeStudent()
+        && submissionOwner(request.resource.data) && submissionClassroom(request.resource.data)
+        && (!request.resource.data.get('practiceProgress', false) || validPracticeDraft(request.resource.data));
+      // Completed and historical submissions remain immutable to students.
+      allow update: if activeStudent() && practiceDraft(resource.data)
+        && resource.data.authUid == request.auth.uid
+        && submissionOwner(request.resource.data) && submissionClassroom(request.resource.data)
+        && request.resource.data.authUid == resource.data.authUid
+        && request.resource.data.studentKey == resource.data.studentKey
+        && request.resource.data.classroomId == resource.data.classroomId
+        && (validPracticeDraft(request.resource.data)
+          || (request.resource.data.get('practiceProgress', false) == false
+            && request.resource.data.submittedAt is timestamp
+            && request.resource.data.submittedAtMillis is number));
+      allow delete: if false;
     }
   }
 }

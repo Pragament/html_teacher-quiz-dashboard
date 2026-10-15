@@ -9,7 +9,7 @@ Independent responsive app for teachers to sign in with Google, manage quiz sess
 - `app.js` - Firebase Auth, quiz session and question-list queries, quiz session creation/updates, submission queries, detail rendering, and CSV export.
 - `school-admin/` - independent admin app for class section CRUD and CSV import/export.
 - `FIRESTORE_SCHEMA.md` - schema and query documentation.
-- `firestore.rules` - starter security rules notes for teacher dashboard access.
+- `firestore.rules` - combined teacher/admin and student app security rules.
 
 ## Flow
 
@@ -67,3 +67,15 @@ The app loads Firebase, KaTeX, Mermaid, and Intro.js from CDNs.
 - The dashboard creates and updates owned `classrooms`, reads private `qb_lists_v1`, reads `qb_quiz_submissions_v1`, and narrowly updates submission AI-review fields.
 - Quiz session taxonomy selections are saved on `classrooms` as IDs only: `classId`, `subjectId`, and `chapterId`. Labels remain in `qb_taxonomy_v1`.
 - For tighter production security, include `teacherUid` or `creatorId` in every submission at write time so Firestore rules can authorize teacher reads without relying on fallback client queries.
+
+## Firestore permission errors after changing rules
+
+The teacher dashboard checks session codes using an owner-scoped classroom query, plus any loaded section sessions. A query constrained only by `classCode` is denied because it could read other teachers' private sessions. Deploy the updated `app.js` to fix “Unable to verify session code” when saving; this fix does not require broader read permissions or a new index. This client check does not guarantee global uniqueness across teachers or concurrent saves; that requires a trusted server-side reservation system.
+
+The student-only rules must be merged with teacher/admin rules. Replacing the project's rules with the student snippet removes teacher access to owned classrooms, question lists, sections, rosters, and submissions.
+
+This repository's `firestore.rules` combines both sets of permissions. Publish its contents in Firebase Console → Firestore Database → Rules for the same project configured in `app.js`, then reload the dashboard. Editing this file or publishing the static website does not deploy Firestore rules. Preserve any additional rules used by other apps in that Firebase project before publishing.
+
+Taxonomy reads are allowed for signed-in users because both apps use shared class/subject/chapter labels. Question reads retain the supplied student-only, published-question policy; any existing question-bank editor or teacher question-metadata permissions must also be retained from the project's deployed rules.
+
+For student queries, Firestore rules are not filters: classroom list queries must constrain `sectionId` to the student's profile section; question queries must constrain `status == 'published'`; submission queries must constrain `studentKey` to the student's profile key. The student's `studentProfiles/{uid}` document must have `active: true` and matching `authUid`. A class-code-only classroom query will be denied by the student policy, even if the matching classroom belongs to that student's section.

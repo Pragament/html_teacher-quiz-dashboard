@@ -94,6 +94,7 @@ const db = getFirestore(app);
 let currentUser = null;
 let classrooms = [];
 let classSections = [];
+let classSectionsLoadError = null;
 let sectionStudents = [];
 let sectionClassrooms = [];
 let questionBankLists = [];
@@ -280,6 +281,7 @@ onAuthStateChanged(auth, async (user) => {
     if (!user) {
         classrooms = [];
         classSections = [];
+        classSectionsLoadError = null;
         sectionStudents = [];
         sectionClassrooms = [];
         questionBankLists = [];
@@ -549,6 +551,7 @@ async function loadTaxonomyForQuestions(questions) {
 
 async function loadClassSections() {
     if (!currentUser) return;
+    classSectionsLoadError = null;
     try {
         const email = String(currentUser.email || '').toLowerCase();
         const byId = new Map();
@@ -569,11 +572,15 @@ async function loadClassSections() {
             sectionClassrooms = [];
         }
     } catch (error) {
+        classSectionsLoadError = error;
+        console.error('Unable to load class sections', error);
         classSections = [];
         sectionStudents = [];
         sectionClassrooms = [];
         activeSectionId = null;
-        toast('Unable to load sections');
+        toast(error.code === 'permission-denied'
+            ? 'Section access denied. Check the deployed Firestore rules.'
+            : 'Unable to load sections. Try Refresh.');
     }
 }
 
@@ -1223,11 +1230,14 @@ function renderSectionReportOptions() {
     els.refreshSectionReportBtn.disabled = !els.sectionReportSectionId.value;
     if (!sections.length) {
         sectionReportSubmissions = [];
-        els.sectionReportSummary.textContent = 'No sections found where you have viewer or admin access.';
-        els.sectionReportTimeline.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
-        els.sectionReportPrompts.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
-        els.sectionShortAnswerReport.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
-        els.sectionReportList.innerHTML = '<div class="empty-card">No viewer/admin-access sections available.</div>';
+        const message = classSectionsLoadError
+            ? (classSectionsLoadError.code === 'permission-denied'
+                ? 'Section access denied by Firestore. Publish the combined teacher/admin and student rules, then Refresh.'
+                : 'Unable to load sections. Check your connection and try Refresh.')
+            : `No viewer/admin memberships found for ${currentUser?.email || 'this account'}. Ask a section admin to check your membership email and role.`;
+        els.sectionReportSummary.textContent = message;
+        [els.sectionReportTimeline, els.sectionReportPrompts, els.sectionShortAnswerReport, els.sectionReportList]
+            .forEach(element => { element.innerHTML = `<div class="empty-card">${esc(message)}</div>`; });
     }
 }
 
@@ -4555,8 +4565,11 @@ async function findClassroomByCode(classCode, excludeClassroomId = '') {
         return classroom.classCode === code && classroom.id !== excludeClassroomId;
     });
     if (localDuplicate) return localDuplicate;
-    const snap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('classCode', '==', code)));
-    const duplicate = snap.docs.find(item => item.id !== excludeClassroomId);
+    // Rules only permit reads of owned sessions (or administered sections).
+    // Query by owner, then compare codes locally to avoid a composite index.
+    // Cross-teacher uniqueness requires a server-side code reservation system.
+    const snap = await getDocs(query(collection(db, COLLECTIONS.classrooms), where('creatorId', '==', currentUser.uid)));
+    const duplicate = snap.docs.find(item => item.id !== excludeClassroomId && item.data().classCode === code);
     return duplicate ? { id: duplicate.id, ...duplicate.data() } : null;
 }
 
