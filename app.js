@@ -37,6 +37,7 @@ const COLLECTIONS = {
     questionBankLists: 'qb_lists_v1',
     questionBankQuestions: 'qb_questions_v1',
     taxonomy: 'qb_taxonomy_v1',
+    reactions: 'qb_reactions_v1',
     submissions: 'qb_quiz_submissions_v1'
 };
 
@@ -95,6 +96,8 @@ let currentUser = null;
 let classrooms = [];
 let classSections = [];
 let classSectionsLoadError = null;
+let sessionReactions = { classroomId: null, items: [], status: 'idle' };
+let reactionLoadVersion = 0;
 let submissionsLoadNotice = '';
 let sectionStudents = [];
 let sectionClassrooms = [];
@@ -280,6 +283,8 @@ onAuthStateChanged(auth, async (user) => {
     els.classroomPanel.hidden = !user;
     els.dashboardView.hidden = !user;
     if (!user) {
+        reactionLoadVersion += 1;
+        sessionReactions = { classroomId: null, items: [], status: 'idle' };
         classrooms = [];
         classSections = [];
         classSectionsLoadError = null;
@@ -678,6 +683,7 @@ async function loadSubmissionsForClassroom(classroomId) {
     if (!classroom) return;
     setStatus('Loading submissions...');
     activeClassroomId = classroomId;
+    void loadSessionReactions(classroomId);
     renderClassrooms();
     submissionsLoadNotice = '';
     try {
@@ -1211,7 +1217,71 @@ async function createClassroom(formValues, selectedList, selectedSection) {
     return null;
 }
 
+async function loadSessionReactions(classroomId) {
+    const version = ++reactionLoadVersion;
+    const userId = currentUser?.uid;
+    sessionReactions = { classroomId, items: [], status: 'loading' };
+    renderSessionReactions();
+    try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.reactions),
+            where('sourceType', '==', 'quiz-session'), where('sourceValue', '==', classroomId)));
+        if (version !== reactionLoadVersion || currentUser?.uid !== userId || activeClassroomId !== classroomId) return;
+        sessionReactions = { classroomId, status: 'ready', items: snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(item => item.sourceType === 'quiz-session' && item.sourceValue === classroomId
+                && typeof item.questionId === 'string' && ['like', 'dislike'].includes(item.value)) };
+    } catch (error) {
+        if (version !== reactionLoadVersion || currentUser?.uid !== userId || activeClassroomId !== classroomId) return;
+        console.error('Unable to load session reactions', error);
+        sessionReactions = { classroomId, items: [], status: 'error', message: error.code === 'permission-denied'
+            ? 'Reaction access denied. Publish the session reaction read rule in firestore.rules, then Refresh.'
+            : 'Unable to load reactions. Check your connection and Firestore query indexes, then Refresh.' };
+    }
+    renderSessionReactions();
+}
+
+function groupSessionReactions(items) {
+    const groups = new Map();
+    for (const item of items) {
+        if (!groups.has(item.questionId)) groups.set(item.questionId, { questionId: item.questionId, likes: 0, dislikes: 0, items: [] });
+        const group = groups.get(item.questionId);
+        if (item.value === 'like') group.likes += 1;
+        else if (item.value === 'dislike') group.dislikes += 1;
+        group.items.push(item);
+    }
+    return Array.from(groups.values()).sort((a, b) => b.dislikes - a.dislikes || b.items.length - a.items.length || a.questionId.localeCompare(b.questionId));
+}
+
+function renderSessionReactions() {
+    const state = sessionReactions;
+    const ready = !!activeClassroomId && state.classroomId === activeClassroomId && state.status === 'ready';
+    const groups = ready ? groupSessionReactions(state.items) : [];
+    $('statLikes').textContent = ready ? String(groups.reduce((sum, group) => sum + group.likes, 0)) : '—';
+    $('statDislikes').textContent = ready ? String(groups.reduce((sum, group) => sum + group.dislikes, 0)) : '—';
+    $('reactionSummary').textContent = !activeClassroomId ? 'Select a quiz session to view reactions.'
+        : state.classroomId !== activeClassroomId || state.status === 'loading' ? 'Loading reactions…'
+        : state.status === 'error' ? state.message
+        : `${state.items.length} current reactions across ${groups.length} questions · Entire session, independent of submission filters. Reactions reflect each user’s latest saved context.`;
+    $('reactionDetails').innerHTML = !ready ? '' : !groups.length ? '<div class="empty-card">No likes or dislikes for this quiz session yet.</div>'
+        : groups.map(group => {
+            const answer = submissions.flatMap(submission => submission.answers || []).find(item => item.questionId === group.questionId);
+            const title = questionTitleForAnswer(answer || { questionId: group.questionId }) || group.questionId;
+            return `<details class="reaction-question">
+                <summary>${esc(title)} · ${group.likes} likes · ${group.dislikes} dislikes</summary>
+                <p class="reaction-question-id">Question ID: ${esc(group.questionId)}</p>
+                ${group.items.map(item => {
+                    const student = submissions.find(submission => submission.authUid === item.userId);
+                    const name = student?.studentName || item.userId || 'Unknown user';
+                    const updated = item.updatedAt?.toMillis?.() || (item.updatedAt?.seconds ? item.updatedAt.seconds * 1000 : 0);
+                    return `<article class="reaction-entry"><strong>${esc(item.value === 'like' ? 'Like' : 'Dislike')} · ${esc(name)}</strong>
+                        <small>${esc(item.userId || '')}${updated ? ` · ${esc(formatDate(updated))}` : ''}</small>
+                        <p class="reaction-comment">${esc(typeof item.comment === 'string' && item.comment.trim() ? item.comment : 'No comment')}</p></article>`;
+                }).join('')}
+            </details>`;
+        }).join('');
+}
+
 function renderSelectedClassroom() {
+    renderSessionReactions();
     const classroom = findClassroom(activeClassroomId);
     if (!classroom) {
         els.selectedClassroomTitle.textContent = 'Select a quiz session';

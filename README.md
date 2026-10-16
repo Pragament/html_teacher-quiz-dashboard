@@ -70,6 +70,10 @@ The app loads Firebase, KaTeX, Mermaid, and Intro.js from CDNs.
 
 ## Firestore permission errors after changing rules
 
+The selected session shows question likes/dislikes and expandable reaction details from `qb_reactions_v1`, queried with `sourceType == 'quiz-session'` and `sourceValue == classroom.id`. Counts cover the entire session regardless of submission filters, and Refresh reloads them. Each reaction document represents a user's latest saved reaction/context, not a historical event: saving that question's reaction in another session can remove it from the previous session's counts. Comments appear as plain text; user IDs are shown, with student names when matching loaded submissions are available. Questions without reactions are omitted.
+
+Publish the `qb_reactions_v1` read grant from `firestore.rules` to allow classroom owners and section admins to see session reactions. Merge it with existing student reaction read/write permissions; this dashboard does not add reaction writes. Permission failures show an unavailable state rather than zero reactions.
+
 The teacher dashboard checks session codes using an owner-scoped classroom query, plus any loaded section sessions. A query constrained only by `classCode` is denied because it could read other teachers' private sessions. Deploy the updated `app.js` to fix “Unable to verify session code” when saving; this fix does not require broader read permissions or a new index. This client check does not guarantee global uniqueness across teachers or concurrent saves; that requires a trusted server-side reservation system.
 
 The student-only rules must be merged with teacher/admin rules. Replacing the project's rules with the student snippet removes teacher access to owned classrooms, question lists, sections, rosters, and submissions.

@@ -1860,3 +1860,12 @@ button {
         padding: 12px;
     }
 }
+
+.session-reactions { margin-top: 18px; }
+.session-reactions summary { cursor: pointer; font-weight: 700; overflow-wrap: anywhere; }
+#reactionSummary, .reaction-question-id, .reaction-entry small { color: var(--muted); }
+.reaction-question { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 10px; }
+.reaction-entry { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; overflow-wrap: anywhere; }
+.reaction-entry small { display: block; margin-top: 4px; }
+.reaction-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
+.selected-classroom > .stats-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
